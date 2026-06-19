@@ -1,6 +1,53 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
+import { supabase } from "@/app/lib/supabase/client";
 
 export default function RegisterPage() {
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [mobileNumber, setMobileNumber] = useState("");
+  const [password, setPassword] = useState("");
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleRegister = async () => {
+    setMessage("");
+
+    if (!fullName || !email || !mobileNumber || !password) {
+      setMessage("Please complete all fields.");
+      return;
+    }
+
+    setLoading(true);
+
+    const { error } = await supabase.from("profiles").insert([
+      {
+        full_name: fullName,
+        email: email.toLowerCase().trim(),
+        mobile_number: mobileNumber,
+        password,
+        role: "INVESTOR",
+        membership_status: "PENDING",
+        wallet_balance: 0,
+      },
+    ]);
+
+    setLoading(false);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setMessage("Registration successful. You may now login.");
+    setFullName("");
+    setEmail("");
+    setMobileNumber("");
+    setPassword("");
+  };
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-green-950 text-white">
       <div
@@ -68,6 +115,8 @@ export default function RegisterPage() {
               </label>
               <input
                 type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
                 placeholder="Juan Dela Cruz"
                 className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
               />
@@ -77,6 +126,8 @@ export default function RegisterPage() {
               <label className="text-sm font-bold text-slate-700">Email</label>
               <input
                 type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
               />
@@ -88,6 +139,8 @@ export default function RegisterPage() {
               </label>
               <input
                 type="text"
+                value={mobileNumber}
+                onChange={(e) => setMobileNumber(e.target.value)}
                 placeholder="+63 900 000 0000"
                 className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
               />
@@ -99,16 +152,26 @@ export default function RegisterPage() {
               </label>
               <input
                 type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 placeholder="Create password"
                 className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
               />
             </div>
 
+            {message && (
+              <div className="rounded-2xl bg-green-50 px-4 py-3 text-sm font-bold text-green-800">
+                {message}
+              </div>
+            )}
+
             <button
               type="button"
-              className="w-full rounded-2xl bg-green-600 px-6 py-4 text-lg font-black text-white shadow-xl hover:bg-green-700"
+              onClick={handleRegister}
+              disabled={loading}
+              className="w-full rounded-2xl bg-green-600 px-6 py-4 text-lg font-black text-white shadow-xl hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-slate-400"
             >
-              Create Co-Planter Account
+              {loading ? "Creating Account..." : "Create Co-Planter Account"}
             </button>
           </form>
 
