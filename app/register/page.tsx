@@ -1,51 +1,135 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
+
+function makeReferralCode(fullName: string) {
+  const base = fullName
+    .replace(/[^a-zA-Z]/g, "")
+    .slice(0, 4)
+    .toUpperCase();
+
+  const random = Math.floor(100000 + Math.random() * 900000);
+  return `${base || "SUR"}${random}`;
+}
 
 export default function RegisterPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
-  const [mobileNumber, setMobileNumber] = useState("");
-  const [password, setPassword] = useState("");
+  const [mobile, setMobile] = useState("");
+  const [address, setAddress] = useState("");
+  const [referredBy, setReferredBy] = useState("");
+
+  const [accountType, setAccountType] = useState("GCash");
+  const [providerName, setProviderName] = useState("GCash");
+  const [accountName, setAccountName] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+
+  const [agree, setAgree] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const referralCode = useMemo(() => makeReferralCode(fullName), [fullName]);
 
   const handleRegister = async () => {
     setMessage("");
 
-    if (!fullName || !email || !mobileNumber || !password) {
-      setMessage("Please complete all fields.");
+    if (!fullName || !email || !mobile || !address) {
+      setMessage("Please complete your personal information.");
       return;
     }
 
-    setLoading(true);
+    if (!accountName || !accountNumber) {
+      setMessage("Please add your Bank / GCash / Maya account.");
+      return;
+    }
 
-    const { error } = await supabase.from("profiles").insert([
-      {
+    if (!agree) {
+      setMessage("Please confirm the co-planter agreement.");
+      return;
+    }
+setLoading(true);
+
+const cleanEmail = email.toLowerCase().trim();
+
+const { data: existing } = await supabase
+  .from("profiles")
+  .select("id")
+  .eq("email", cleanEmail)
+  .maybeSingle();
+
+if (existing) {
+  setLoading(false);
+  setMessage("Email already registered. Please login.");
+  return;
+}
+
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .insert({
         full_name: fullName,
-        email: email.toLowerCase().trim(),
-        mobile_number: mobileNumber,
-        password,
-        role: "INVESTOR",
-        membership_status: "PENDING",
-        wallet_balance: 0,
-      },
-    ]);
+        email: cleanEmail,
+        mobile,
+        address,
+        role: "COPLANTER",
+        kyc_status: "PENDING",
+        account_status: "PENDING",
+        referral_code: referralCode,
+        referred_by: referredBy || null,
+      })
+      .select()
+      .single();
+
+    if (profileError || !profile) {
+      setLoading(false);
+      setMessage(profileError?.message || "Unable to create profile.");
+      return;
+    }
+
+    const { error: walletError } = await supabase.from("wallets").insert({
+      profile_id: profile.id,
+      balance: 0,
+      recovery_balance: 0,
+      harvest_balance: 0,
+    });
+
+    if (walletError) {
+      setLoading(false);
+      setMessage(walletError.message);
+      return;
+    }
+
+    const { error: linkedError } = await supabase
+      .from("linked_accounts")
+      .insert({
+        profile_id: profile.id,
+        account_type: accountType,
+        provider_name: providerName,
+        account_name: accountName,
+        account_number: accountNumber,
+        status: "PENDING",
+      });
 
     setLoading(false);
 
-    if (error) {
-      setMessage(error.message);
+    if (linkedError) {
+      setMessage(linkedError.message);
       return;
     }
 
-    setMessage("Registration successful. You may now login.");
+    setMessage(
+      `Registration successful. Your referral code is ${referralCode}. Please login after admin approval.`
+    );
+
     setFullName("");
     setEmail("");
-    setMobileNumber("");
-    setPassword("");
+    setMobile("");
+    setAddress("");
+    setReferredBy("");
+    setAccountName("");
+    setAccountNumber("");
+    setAgree(false);
   };
 
   return (
@@ -54,8 +138,7 @@ export default function RegisterPage() {
         className="absolute inset-0 bg-cover bg-center"
         style={{ backgroundImage: "url('/forest-bg.jpg')" }}
       />
-
-      <div className="absolute inset-0 bg-gradient-to-r from-green-950/80 via-green-950/45 to-blue-950/40" />
+      <div className="absolute inset-0 bg-gradient-to-r from-green-950/90 via-green-950/65 to-blue-950/60" />
 
       <nav className="relative z-10 flex items-center justify-between px-8 py-6 lg:px-16">
         <Link href="/" className="flex items-center gap-4">
@@ -82,10 +165,10 @@ export default function RegisterPage() {
         </Link>
       </nav>
 
-      <section className="relative z-10 mx-auto grid min-h-[80vh] max-w-7xl items-center gap-12 px-8 lg:grid-cols-2 lg:px-16">
-        <div>
+      <section className="relative z-10 mx-auto grid max-w-7xl gap-10 px-8 pb-16 lg:grid-cols-[0.9fr_1.1fr] lg:px-16">
+        <div className="pt-10">
           <p className="inline-flex rounded-full bg-white/15 px-5 py-2 text-sm font-bold text-green-100 backdrop-blur">
-            Co-Planter Registration
+            Official Co-Planter Registration
           </p>
 
           <h2 className="mt-6 text-5xl font-black leading-tight lg:text-7xl">
@@ -94,73 +177,143 @@ export default function RegisterPage() {
           </h2>
 
           <p className="mt-6 max-w-xl text-lg leading-8 text-green-50/90">
-            Create your SUR Aloeswood account to access tree ownership,
-            membership, wallet, marketplace, QR Tree Passport, and plantation
-            monitoring.
+            Register for wallet access, tree monitoring, referral tracking,
+            digital certificates, recovery fund, maintenance payments, and
+            plantation updates.
           </p>
+
+          <div className="mt-8 rounded-3xl border border-white/15 bg-white/10 p-6 backdrop-blur">
+            <p className="text-sm font-bold text-green-200">
+              Program Reminder
+            </p>
+            <p className="mt-2 text-sm leading-7 text-white/85">
+              This is a co-planting and plantation management platform. It is
+              not a deposit-taking, savings, lending, or guaranteed investment
+              program.
+            </p>
+          </div>
         </div>
 
-        <div className="rounded-[2rem] border border-white/20 bg-white/90 p-8 text-slate-900 shadow-2xl backdrop-blur-xl">
+        <div className="rounded-[2rem] border border-white/20 bg-white/95 p-8 text-slate-900 shadow-2xl backdrop-blur-xl">
           <h3 className="text-3xl font-black text-blue-950">
-            Create Account
+            Create Co-Planter Account
           </h3>
           <p className="mt-2 text-slate-500">
-            Register as a SUR Aloeswood Co-Planter.
+            Complete personal details and linked payment account.
           </p>
 
-          <form className="mt-8 space-y-4">
+          <form className="mt-8 space-y-6">
             <div>
-              <label className="text-sm font-bold text-slate-700">
-                Full Name
-              </label>
-              <input
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Juan Dela Cruz"
-                className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+              <h4 className="mb-4 text-lg font-black text-green-800">
+                1. Personal Information
+              </h4>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Full name"
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+                />
+
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Email address"
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+                />
+
+                <input
+                  type="text"
+                  value={mobile}
+                  onChange={(e) => setMobile(e.target.value)}
+                  placeholder="Mobile number"
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+                />
+
+                <input
+                  type="text"
+                  value={referredBy}
+                  onChange={(e) => setReferredBy(e.target.value)}
+                  placeholder="Referral code optional"
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+                />
+              </div>
+
+              <textarea
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="Complete address"
+                className="mt-4 min-h-24 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
               />
             </div>
 
             <div>
-              <label className="text-sm font-bold text-slate-700">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
-              />
+              <h4 className="mb-4 text-lg font-black text-green-800">
+                2. Linked Bank / GCash / Maya
+              </h4>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <select
+                  value={accountType}
+                  onChange={(e) => {
+                    setAccountType(e.target.value);
+                    setProviderName(e.target.value);
+                  }}
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+                >
+                  <option>GCash</option>
+                  <option>Maya</option>
+                  <option>Bank</option>
+                </select>
+
+                <input
+                  type="text"
+                  value={providerName}
+                  onChange={(e) => setProviderName(e.target.value)}
+                  placeholder="Provider name e.g. BDO, BPI, GCash"
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+                />
+
+                <input
+                  type="text"
+                  value={accountName}
+                  onChange={(e) => setAccountName(e.target.value)}
+                  placeholder="Account name"
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+                />
+
+                <input
+                  type="text"
+                  value={accountNumber}
+                  onChange={(e) => setAccountNumber(e.target.value)}
+                  placeholder="Account number / mobile number"
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="text-sm font-bold text-slate-700">
-                Mobile Number
+            <div className="rounded-2xl border border-green-200 bg-green-50 p-5">
+              <label className="flex gap-3 text-sm font-semibold text-green-900">
+                <input
+                  type="checkbox"
+                  checked={agree}
+                  onChange={(e) => setAgree(e.target.checked)}
+                  className="mt-1"
+                />
+                <span>
+                  I confirm that I am applying as a SUR Aloeswood Co-Planter
+                  and understand that returns depend on actual plantation
+                  performance, harvest results, market conditions, and
+                  applicable laws.
+                </span>
               </label>
-              <input
-                type="text"
-                value={mobileNumber}
-                onChange={(e) => setMobileNumber(e.target.value)}
-                placeholder="+63 900 000 0000"
-                className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-bold text-slate-700">
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Create password"
-                className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
-              />
             </div>
 
             {message && (
-              <div className="rounded-2xl bg-green-50 px-4 py-3 text-sm font-bold text-green-800">
+              <div className="rounded-2xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">
                 {message}
               </div>
             )}
