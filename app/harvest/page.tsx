@@ -1,253 +1,154 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
+import { formatDate, harvestEstimateText, latestLogForTree, statusClass, treeDisplayCode, type AnyRow } from "@/app/lib/coplanting/live";
 
-type Profile = {
-  id: string;
-  email: string;
-  full_name: string | null;
-};
-
-type HarvestTree = {
-  id: string;
-  profile_id: string;
-  tree_code: string | null;
-  denr_tag_number: string | null;
-  species: string | null;
-  status: string | null;
-  planted_at: string | null;
-  gps_lat: string | number | null;
-  gps_lng: string | number | null;
-  latest_growth_update?: string | null;
-  latest_photo_url?: string | null;
-  latest_video_url?: string | null;
-  created_at?: string | null;
-};
-
-function yearsFromDate(dateValue: string | null) {
-  if (!dateValue) return 0;
-  const start = new Date(dateValue).getTime();
-  const now = Date.now();
-
-  if (!start || Number.isNaN(start)) return 0;
-
-  return Math.max(0, (now - start) / (1000 * 60 * 60 * 24 * 365.25));
-}
-
-function harvestStatus(age: number) {
-  if (age <= 0) return "Pending planting date";
-  if (age < 1) return "Early growth phase";
-  if (age < 3) return "Growth monitoring phase";
-  if (age < 5) return "Approaching estimated harvest window";
-  return "Within or beyond estimated harvest window";
-}
-
-export default function HarvestTimelinePage() {
+export default function HarvestPage() {
   const [email, setEmail] = useState("");
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [trees, setTrees] = useState<HarvestTree[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [profile, setProfile] = useState<AnyRow | null>(null);
+  const [trees, setTrees] = useState<AnyRow[]>([]);
+  const [logs, setLogs] = useState<AnyRow[]>([]);
   const [message, setMessage] = useState("");
 
-  async function loadHarvest(targetEmail?: string) {
-    setLoading(true);
+  useEffect(() => {
+    const saved = localStorage.getItem("sur_login_email") || "";
+    setEmail(saved);
+    if (saved) loadHarvest(saved);
+  }, []);
+
+  async function loadHarvest(targetEmail = email) {
     setMessage("");
+    const cleanEmail = targetEmail.toLowerCase().trim();
 
-    const cleanEmail = (targetEmail || email).toLowerCase().trim();
-
-    if (!cleanEmail) {
-      setMessage("Enter your registered email first.");
-      setLoading(false);
-      return;
-    }
-
-    localStorage.setItem("sur_login_email", cleanEmail);
-
-    const { data: foundProfile, error: profileError } = await supabase
+    const { data: profileRow, error: profileError } = await supabase
       .from("profiles")
-      .select("id,email,full_name")
+      .select("id, full_name, email")
       .eq("email", cleanEmail)
       .maybeSingle();
 
-    if (profileError || !foundProfile) {
+    if (profileError || !profileRow) {
+      setMessage(profileError?.message || "Profile not found.");
       setProfile(null);
       setTrees([]);
-      setMessage(profileError?.message || "Profile not found.");
-      setLoading(false);
+      setLogs([]);
       return;
     }
 
-    setProfile(foundProfile);
-
-    const { data: treeData, error: treeError } = await supabase
+    const { data: treeRows } = await supabase
       .from("tree_registry")
-      .select("*")
-      .eq("profile_id", foundProfile.id)
+      .select("id, profile_id, purchase_id, tree_code, denr_tag_number, species, status, gps_lat, gps_lng, planted_at, created_at")
+      .eq("profile_id", profileRow.id)
       .order("created_at", { ascending: false });
 
-    if (treeError) {
-      setTrees([]);
-      setMessage(treeError.message);
-      setLoading(false);
-      return;
+    const treeIds = (treeRows || []).map((tree: AnyRow) => tree.id);
+    let logRows: AnyRow[] = [];
+
+    if (treeIds.length > 0) {
+      const { data } = await supabase
+        .from("tree_growth_logs")
+        .select("id, tree_id, height_cm, diameter_cm, health_status, remarks, photo_url, created_at")
+        .in("tree_id", treeIds)
+        .order("created_at", { ascending: false });
+      logRows = (data || []) as AnyRow[];
     }
 
-    setTrees(treeData || []);
-    setLoading(false);
+    setProfile(profileRow);
+    setTrees((treeRows || []) as AnyRow[]);
+    setLogs(logRows);
+    localStorage.setItem("sur_login_email", cleanEmail);
   }
 
-  useEffect(() => {
-    const savedEmail = localStorage.getItem("sur_login_email") || "";
-    setEmail(savedEmail);
-    if (savedEmail) loadHarvest(savedEmail);
-  }, []);
+  const harvestReady = useMemo(() => trees.filter((tree) => String(tree.status || "").toUpperCase() === "HARVEST_READY"), [trees]);
+  const growing = useMemo(() => trees.filter((tree) => String(tree.status || "").toUpperCase() !== "HARVEST_READY"), [trees]);
 
   return (
-    <main className="min-h-screen bg-[#06140d] px-5 py-8 text-white">
-      <section className="mx-auto max-w-7xl">
-        <div className="mb-8 rounded-3xl border border-emerald-500/20 bg-gradient-to-br from-emerald-950 via-[#0b1d12] to-black p-6">
-          <p className="text-sm font-semibold uppercase tracking-[0.35em] text-yellow-400">
-            HARVEST TIMELINE
-          </p>
-          <h1 className="mt-3 text-3xl font-black md:text-5xl">
-            Co-Planter Harvest Outlook
-          </h1>
-          <p className="mt-4 max-w-3xl text-sm text-emerald-100 md:text-base">
-            Monitor the estimated 3 to 5 year harvest window for each registered AG tree,
-            subject to plantation performance and inoculation schedule.
-          </p>
-
-          <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/10 p-4 md:flex-row">
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter registered email"
-              className="min-h-12 flex-1 rounded-xl border border-white/10 bg-white px-4 font-semibold text-slate-900 outline-none"
-            />
-            <button
-              onClick={() => loadHarvest()}
-              disabled={loading}
-              className="rounded-xl bg-yellow-400 px-6 py-3 font-black text-black hover:bg-yellow-300 disabled:opacity-60"
-            >
-              {loading ? "Loading..." : "Load Harvest"}
-            </button>
-          </div>
-
-          <div className="mt-5 flex flex-wrap gap-3">
-            <Link href="/tree" className="rounded-xl bg-yellow-400 px-5 py-3 font-bold text-black">
-              View My Trees
-            </Link>
-            <Link href="/plantation" className="rounded-xl border border-emerald-500/30 px-5 py-3 font-bold text-emerald-100">
-              Plantation Timeline
-            </Link>
-            <Link href="/certificates" className="rounded-xl border border-emerald-500/30 px-5 py-3 font-bold text-emerald-100">
-              Certificates
-            </Link>
-          </div>
-        </div>
-
-        {message && (
-          <div className="mb-6 rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-5 text-yellow-100">
-            {message}
-          </div>
-        )}
-
-        {profile && (
-          <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-white/10 p-5">
-            <p className="text-sm text-emerald-200">Loaded Co-Planter</p>
-            <h2 className="text-xl font-black">{profile.full_name || profile.email}</h2>
-            <p className="text-sm text-white/60">{profile.email}</p>
-          </div>
-        )}
-
-        {!loading && !message && trees.length === 0 && profile && (
-          <div className="rounded-2xl border border-emerald-500/20 bg-white/10 p-6">
-            <h2 className="text-xl font-bold text-yellow-300">No harvest records yet</h2>
-            <p className="mt-2 text-emerald-100">
-              Harvest outlook will appear once your approved seedlings are registered as AG trees.
+    <main className="min-h-screen bg-[#06170f] text-white">
+      <section className="border-b border-white/10 bg-gradient-to-r from-green-950 via-emerald-950 to-slate-950 px-6 py-8 lg:px-14">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div>
+            <p className="text-sm font-black uppercase tracking-[0.3em] text-green-300">SUR ALOESWOOD CO-PLANTER</p>
+            <h1 className="mt-3 text-4xl font-black lg:text-6xl">Harvest Timeline</h1>
+            <p className="mt-3 max-w-3xl text-green-100/80">
+              Harvest estimates are 3 to 5 years, subject to plantation performance and inoculation schedule.
             </p>
           </div>
-        )}
 
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {trees.map((tree) => {
-            const baseDate = tree.planted_at || tree.created_at || null;
-            const age = yearsFromDate(baseDate);
-            const percent = Math.min(100, Math.round((age / 5) * 100));
-            const remainingMin = Math.max(0, 3 - age);
-            const remainingMax = Math.max(0, 5 - age);
-
-            return (
-              <div key={tree.id} className="overflow-hidden rounded-3xl border border-emerald-500/20 bg-white/10 backdrop-blur">
-                <div className="h-40 bg-gradient-to-br from-emerald-800 to-black">
-                  {tree.latest_photo_url ? (
-                    <img src={tree.latest_photo_url} alt="Tree photo" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-5xl">🌳</div>
-                  )}
-                </div>
-
-                <div className="p-5">
-                  <p className="text-xs uppercase tracking-[0.25em] text-emerald-300">
-                    AG Tree Code
-                  </p>
-                  <h2 className="mt-1 text-2xl font-black text-yellow-300">
-                    {tree.tree_code || "Pending AG Code"}
-                  </h2>
-
-                  <div className="mt-4 space-y-2 text-sm text-emerald-100">
-                    <p><b>DENR Tag:</b> {tree.denr_tag_number || "Pending"}</p>
-                    <p><b>Species:</b> {tree.species || "Aquilaria Malaccensis"}</p>
-                    <p><b>Status:</b> {tree.status || "Pending"}</p>
-                    <p><b>Planted:</b> {tree.planted_at ? new Date(tree.planted_at).toLocaleDateString() : "Pending"}</p>
-                    <p><b>GPS:</b> {tree.gps_lat || "—"}, {tree.gps_lng || "—"}</p>
-                  </div>
-
-                  <div className="mt-5 rounded-2xl bg-black/30 p-4">
-                    <div className="flex justify-between text-xs text-emerald-200">
-                      <span>Harvest Progress</span>
-                      <span>{percent}%</span>
-                    </div>
-                    <div className="mt-2 h-3 overflow-hidden rounded-full bg-emerald-950">
-                      <div className="h-full rounded-full bg-yellow-400" style={{ width: `${percent}%` }} />
-                    </div>
-                    <p className="mt-3 text-sm font-bold text-yellow-300">
-                      {harvestStatus(age)}
-                    </p>
-                    <p className="mt-1 text-sm text-emerald-100">
-                      Remaining estimate: {remainingMin.toFixed(1)} to {remainingMax.toFixed(1)} years
-                    </p>
-                  </div>
-
-                  <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-950/40 p-4">
-                    <p className="text-xs text-emerald-300">Latest Growth Update</p>
-                    <p className="mt-1 text-sm">
-                      {tree.latest_growth_update || "No growth update yet."}
-                    </p>
-                  </div>
-
-                  {tree.latest_video_url && (
-                    <Link
-                      href={tree.latest_video_url}
-                      target="_blank"
-                      className="mt-4 block rounded-xl border border-emerald-500/30 px-4 py-3 text-center font-bold text-emerald-100"
-                    >
-                      View Latest Video
-                    </Link>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          <div className="flex flex-wrap gap-3">
+            <Link href="/investor/my-trees" className="rounded-2xl bg-green-500 px-5 py-3 text-sm font-black text-green-950">My Trees</Link>
+            <Link href="/certificates" className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-sm font-black">Certificates</Link>
+          </div>
         </div>
 
-        <div className="mt-8 rounded-3xl border border-yellow-500/20 bg-yellow-500/10 p-5 text-sm text-yellow-100">
-          No guaranteed returns. Actual harvest depends on plantation performance,
-          market conditions, inoculation schedule, and applicable laws.
+        <div className="mt-8 grid gap-3 rounded-3xl border border-white/10 bg-white/10 p-4 md:grid-cols-[1fr_auto]">
+          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Registered email" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
+          <button onClick={() => loadHarvest()} className="rounded-2xl bg-green-500 px-8 py-4 text-sm font-black text-green-950">Load Harvest</button>
+        </div>
+
+        {message && <div className="mt-4 rounded-2xl border border-yellow-300/30 bg-yellow-400/15 px-5 py-4 text-sm font-bold text-yellow-100">{message}</div>}
+      </section>
+
+      <section className="grid gap-5 px-6 py-8 md:grid-cols-4 lg:px-14">
+        <Metric title="Co-Planter" value={profile?.full_name || "Not loaded"} />
+        <Metric title="Total AG Trees" value={String(trees.length)} />
+        <Metric title="Growing" value={String(growing.length)} />
+        <Metric title="Harvest Ready" value={String(harvestReady.length)} />
+      </section>
+
+      <section className="px-6 pb-16 lg:px-14">
+        <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
+          <h2 className="text-3xl font-black">Harvest Readiness</h2>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {trees.length === 0 ? (
+              <div className="md:col-span-2 xl:col-span-3">
+                <Empty text="No AG trees yet." />
+              </div>
+            ) : trees.map((tree) => {
+              const latest = latestLogForTree(tree.id, logs);
+              return (
+                <div key={tree.id} className="rounded-3xl border border-white/10 bg-black/25 p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-2xl font-black text-yellow-300">{treeDisplayCode(tree)}</p>
+                      <p className="mt-1 text-sm text-white/60">{tree.species || "Aquilaria Malaccensis"}</p>
+                    </div>
+                    <span className={`rounded-full border px-3 py-1 text-xs font-black ${statusClass(tree.status)}`}>{tree.status || "REGISTERED"}</span>
+                  </div>
+
+                  <div className="mt-5 space-y-3">
+                    <Info label="Planted" value={formatDate(tree.planted_at)} />
+                    <Info label="Harvest Window" value={harvestEstimateText(tree)} />
+                    <Info label="Latest Health" value={latest?.health_status || "No update yet"} />
+                    <Info label="Latest Update" value={latest?.remarks || "No growth update yet"} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mt-8 rounded-[2rem] border border-yellow-300/20 bg-yellow-400/10 p-6">
+          <h2 className="text-2xl font-black text-yellow-200">Harvest Disclaimer</h2>
+          <p className="mt-3 max-w-5xl text-sm leading-7 text-yellow-50/80">
+            No guaranteed returns. Actual harvest depends on plantation performance, inoculation schedule, weather, disease risk,
+            market conditions, buyer demand, compliance requirements, and applicable laws.
+          </p>
         </div>
       </section>
     </main>
   );
+}
+
+function Metric({ title, value }: { title: string; value: string }) {
+  return <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-5"><p className="text-xs font-black uppercase tracking-wide text-green-100/60">{title}</p><p className="mt-3 truncate text-xl font-black text-green-300">{value}</p></div>;
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-2xl bg-black/25 p-4"><p className="text-xs font-bold uppercase tracking-wide text-white/45">{label}</p><p className="mt-2 text-sm font-black text-white">{value}</p></div>;
+}
+
+function Empty({ text }: { text: string }) {
+  return <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm font-bold text-white/60">{text}</div>;
 }

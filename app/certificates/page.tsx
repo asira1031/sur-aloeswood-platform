@@ -1,213 +1,195 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
-
-type Profile = {
-  id: string;
-  email: string;
-  full_name: string | null;
-};
-
-type CertificateTree = {
-  id: string;
-  profile_id: string;
-  tree_code: string | null;
-  denr_tag_number: string | null;
-  species: string | null;
-  status: string | null;
-  planted_at: string | null;
-  gps_lat: string | number | null;
-  gps_lng: string | number | null;
-  certificate_status?: string | null;
-  certificate_no?: string | null;
-  latest_photo_url?: string | null;
-  created_at?: string | null;
-};
+import {
+  formatDate,
+  harvestEstimateText,
+  latestLogForTree,
+  statusClass,
+  treeDisplayCode,
+  type AnyRow,
+} from "@/app/lib/coplanting/live";
 
 export default function CertificatesPage() {
   const [email, setEmail] = useState("");
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [trees, setTrees] = useState<CertificateTree[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [profile, setProfile] = useState<AnyRow | null>(null);
+  const [trees, setTrees] = useState<AnyRow[]>([]);
+  const [logs, setLogs] = useState<AnyRow[]>([]);
+  const [selectedTreeId, setSelectedTreeId] = useState("");
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  async function loadCertificates(targetEmail?: string) {
+  useEffect(() => {
+    const saved = localStorage.getItem("sur_login_email") || "";
+    setEmail(saved);
+    if (saved) loadCertificates(saved);
+  }, []);
+
+  async function loadCertificates(targetEmail = email) {
     setLoading(true);
     setMessage("");
 
-    const cleanEmail = (targetEmail || email).toLowerCase().trim();
+    const cleanEmail = targetEmail.toLowerCase().trim();
 
-    if (!cleanEmail) {
-      setMessage("Enter your registered email first.");
-      setLoading(false);
-      return;
-    }
-
-    localStorage.setItem("sur_login_email", cleanEmail);
-
-    const { data: foundProfile, error: profileError } = await supabase
+    const { data: profileRow, error: profileError } = await supabase
       .from("profiles")
-      .select("id,email,full_name")
+      .select("id, full_name, email, account_status, kyc_status, membership_status")
       .eq("email", cleanEmail)
       .maybeSingle();
 
-    if (profileError || !foundProfile) {
+    if (profileError || !profileRow) {
+      setMessage(profileError?.message || "Profile not found.");
       setProfile(null);
       setTrees([]);
-      setMessage(profileError?.message || "Profile not found.");
+      setLogs([]);
       setLoading(false);
       return;
     }
 
-    setProfile(foundProfile);
-
-    const { data: treeData, error: treeError } = await supabase
+    const { data: treeRows, error: treeError } = await supabase
       .from("tree_registry")
-      .select("*")
-      .eq("profile_id", foundProfile.id)
+      .select("id, profile_id, purchase_id, tree_code, denr_tag_number, species, status, gps_lat, gps_lng, planted_at, created_at")
+      .eq("profile_id", profileRow.id)
       .order("created_at", { ascending: false });
 
     if (treeError) {
-      setTrees([]);
       setMessage(treeError.message);
       setLoading(false);
       return;
     }
 
-    setTrees(treeData || []);
+    const treeIds = (treeRows || []).map((tree: AnyRow) => tree.id);
+    let logRows: AnyRow[] = [];
+
+    if (treeIds.length > 0) {
+      const { data } = await supabase
+        .from("tree_growth_logs")
+        .select("id, tree_id, height_cm, diameter_cm, health_status, remarks, photo_url, created_at")
+        .in("tree_id", treeIds)
+        .order("created_at", { ascending: false });
+
+      logRows = (data || []) as AnyRow[];
+    }
+
+    setProfile(profileRow);
+    setTrees((treeRows || []) as AnyRow[]);
+    setLogs(logRows);
+    setSelectedTreeId((treeRows?.[0] as AnyRow | undefined)?.id || "");
+    localStorage.setItem("sur_login_email", cleanEmail);
     setLoading(false);
   }
 
-  useEffect(() => {
-    const savedEmail = localStorage.getItem("sur_login_email") || "";
-    setEmail(savedEmail);
-    if (savedEmail) loadCertificates(savedEmail);
-  }, []);
+  const selectedTree = useMemo(() => trees.find((tree) => tree.id === selectedTreeId) || null, [trees, selectedTreeId]);
+  const latestLog = selectedTree ? latestLogForTree(selectedTree.id, logs) : null;
 
   return (
-    <main className="min-h-screen bg-[#06140d] px-5 py-8 text-white">
-      <section className="mx-auto max-w-7xl">
-        <div className="mb-8 rounded-3xl border border-emerald-500/20 bg-gradient-to-br from-emerald-950 via-[#0b1d12] to-black p-6">
-          <p className="text-sm font-semibold uppercase tracking-[0.35em] text-yellow-400">
-            TREE CERTIFICATES
-          </p>
-          <h1 className="mt-3 text-3xl font-black md:text-5xl">
-            Co-Planter Certificate Center
-          </h1>
-          <p className="mt-4 max-w-3xl text-sm text-emerald-100 md:text-base">
-            Preview your tree certificate records with AG codes, DENR tags,
-            species, GPS location, and plantation registration status.
-          </p>
-
-          <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/10 p-4 md:flex-row">
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter registered email"
-              className="min-h-12 flex-1 rounded-xl border border-white/10 bg-white px-4 font-semibold text-slate-900 outline-none"
-            />
-            <button
-              onClick={() => loadCertificates()}
-              disabled={loading}
-              className="rounded-xl bg-yellow-400 px-6 py-3 font-black text-black hover:bg-yellow-300 disabled:opacity-60"
-            >
-              {loading ? "Loading..." : "Load Certificates"}
-            </button>
+    <main className="min-h-screen bg-[#06170f] text-white">
+      <section className="border-b border-white/10 bg-gradient-to-r from-green-950 via-emerald-950 to-slate-950 px-6 py-8 lg:px-14">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div>
+            <p className="text-sm font-black uppercase tracking-[0.3em] text-green-300">SUR ALOESWOOD CO-PLANTER</p>
+            <h1 className="mt-3 text-4xl font-black lg:text-6xl">Tree Certificates</h1>
+            <p className="mt-3 max-w-3xl text-green-100/80">
+              Certificate preview for registered AG trees. Final issuance remains subject to admin verification.
+            </p>
           </div>
 
-          <div className="mt-5 flex flex-wrap gap-3">
-            <Link href="/tree" className="rounded-xl bg-yellow-400 px-5 py-3 font-bold text-black">
-              Back to Tree Registry
-            </Link>
-            <Link href="/investor/marketplace" className="rounded-xl border border-emerald-500/30 px-5 py-3 font-bold text-emerald-100">
-              Buy Seedlings
-            </Link>
-            <Link href="/harvest" className="rounded-xl border border-emerald-500/30 px-5 py-3 font-bold text-emerald-100">
-              Harvest Timeline
-            </Link>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/investor/my-trees" className="rounded-2xl bg-green-500 px-5 py-3 text-sm font-black text-green-950">My Trees</Link>
+            <Link href="/investor/timeline" className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-sm font-black">Timeline</Link>
           </div>
         </div>
 
-        {message && (
-          <div className="mb-6 rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-5 text-yellow-100">
-            {message}
-          </div>
-        )}
+        <div className="mt-8 grid gap-3 rounded-3xl border border-white/10 bg-white/10 p-4 md:grid-cols-[1fr_auto]">
+          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Registered email" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
+          <button onClick={() => loadCertificates()} disabled={loading} className="rounded-2xl bg-green-500 px-8 py-4 text-sm font-black text-green-950 disabled:bg-slate-500">{loading ? "Loading..." : "Load Certificates"}</button>
+        </div>
 
-        {profile && (
-          <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-white/10 p-5">
-            <p className="text-sm text-emerald-200">Loaded Co-Planter</p>
-            <h2 className="text-xl font-black">{profile.full_name || profile.email}</h2>
-            <p className="text-sm text-white/60">{profile.email}</p>
-          </div>
-        )}
+        {message && <div className="mt-4 rounded-2xl border border-yellow-300/30 bg-yellow-400/15 px-5 py-4 text-sm font-bold text-yellow-100">{message}</div>}
+      </section>
 
-        {!loading && !message && trees.length === 0 && profile && (
-          <div className="rounded-2xl border border-emerald-500/20 bg-white/10 p-6">
-            <h2 className="text-xl font-bold text-yellow-300">No certificates yet</h2>
-            <p className="mt-2 text-emerald-100">
-              Certificate previews will appear after your approved seedlings are registered as AG trees.
-            </p>
-          </div>
-        )}
-
-        <div className="grid gap-6 lg:grid-cols-2">
-          {trees.map((tree) => (
-            <div
-              key={tree.id}
-              className="overflow-hidden rounded-3xl border border-yellow-500/20 bg-[#f8f0d0] text-[#1d1604] shadow-2xl"
-            >
-              <div className="border-b border-yellow-700/20 bg-gradient-to-r from-yellow-500 to-yellow-200 p-5">
-                <p className="text-xs font-bold uppercase tracking-[0.3em]">
-                  SUR ALOESWOOD PLANTATION
-                </p>
-                <h2 className="mt-2 text-2xl font-black">Tree Ownership Certificate</h2>
-              </div>
-
-              <div className="p-6">
-                <div className="rounded-2xl border-2 border-yellow-700/30 bg-white/50 p-5">
-                  <p className="text-xs font-bold uppercase tracking-[0.25em] text-yellow-800">
-                    AG Tree Code
-                  </p>
-                  <h3 className="mt-1 text-4xl font-black text-emerald-900">
-                    {tree.tree_code || "Pending AG Code"}
-                  </h3>
-
-                  <div className="mt-5 grid gap-3 text-sm md:grid-cols-2">
-                    <p><b>Co-Planter:</b> {profile?.full_name || profile?.email || "Co-Planter"}</p>
-                    <p><b>Certificate No:</b> {tree.certificate_no || `CERT-${tree.tree_code || "PENDING"}`}</p>
-                    <p><b>DENR Tag:</b> {tree.denr_tag_number || "Pending"}</p>
-                    <p><b>Species:</b> {tree.species || "Aquilaria Malaccensis"}</p>
-                    <p><b>Status:</b> {tree.status || "Pending"}</p>
-                    <p><b>Certificate:</b> {tree.certificate_status || "Preview / Pending Verification"}</p>
-                    <p><b>Planted:</b> {tree.planted_at ? new Date(tree.planted_at).toLocaleDateString() : "Pending"}</p>
-                    <p><b>GPS:</b> {tree.gps_lat || "—"}, {tree.gps_lng || "—"}</p>
+      <section className="grid gap-6 px-6 py-8 lg:grid-cols-[0.8fr_1.2fr] lg:px-14">
+        <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
+          <h2 className="text-3xl font-black">Registered Trees</h2>
+          <div className="mt-6 space-y-3">
+            {trees.length === 0 ? (
+              <Empty text="No AG trees yet." />
+            ) : trees.map((tree) => (
+              <button
+                key={tree.id}
+                onClick={() => setSelectedTreeId(tree.id)}
+                className={`w-full rounded-2xl border p-5 text-left ${selectedTreeId === tree.id ? "border-yellow-300 bg-yellow-400/10" : "border-white/10 bg-black/20"}`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-2xl font-black text-yellow-300">{treeDisplayCode(tree)}</p>
+                    <p className="mt-1 text-sm text-white/60">{tree.species || "Aquilaria Malaccensis"}</p>
                   </div>
+                  <span className={`rounded-full border px-3 py-1 text-xs font-black ${statusClass(tree.status)}`}>{tree.status || "REGISTERED"}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
 
-                  <div className="mt-6 rounded-xl border border-emerald-900/20 bg-emerald-900/10 p-4 text-sm">
-                    This certificate preview confirms the tree registry details available in the platform.
-                    Final certificate release is subject to Admin verification and plantation records.
+        <div className="rounded-[2rem] border border-yellow-300/20 bg-gradient-to-br from-white/[0.09] via-green-950/30 to-black p-6 shadow-2xl">
+          <div className="rounded-[1.5rem] border border-yellow-300/30 bg-[#f8f1d8] p-6 text-slate-950">
+            <p className="text-center text-xs font-black uppercase tracking-[0.35em] text-green-900">SUR ALOESWOOD CORPORATION</p>
+            <h2 className="mt-4 text-center text-3xl font-black md:text-5xl">Tree Certificate</h2>
+            <p className="mt-2 text-center text-sm font-bold text-slate-600">Certificate of Co-Planting Participation</p>
+
+            {!selectedTree ? (
+              <div className="mt-8 rounded-2xl border border-dashed border-slate-400 p-8 text-center font-bold text-slate-500">
+                Select a tree to preview certificate.
+              </div>
+            ) : (
+              <>
+                <div className="mx-auto mt-8 max-w-2xl rounded-3xl border-4 border-double border-yellow-700/50 bg-white/70 p-6">
+                  <p className="text-center text-sm text-slate-600">This certifies that</p>
+                  <p className="mt-2 text-center text-3xl font-black text-green-950">{profile?.full_name || profile?.email || "Co-Planter"}</p>
+                  <p className="mt-4 text-center text-sm leading-7 text-slate-700">
+                    is recorded as co-planter for one SUR Aloeswood tree under the plantation management program.
+                  </p>
+
+                  <div className="mt-6 grid gap-3 text-sm md:grid-cols-2">
+                    <CertInfo label="AG Tree Code" value={treeDisplayCode(selectedTree)} />
+                    <CertInfo label="DENR Tag" value={selectedTree.denr_tag_number || "Pending"} />
+                    <CertInfo label="Species" value={selectedTree.species || "Aquilaria Malaccensis"} />
+                    <CertInfo label="Status" value={selectedTree.status || "REGISTERED"} />
+                    <CertInfo label="GPS" value={selectedTree.gps_lat && selectedTree.gps_lng ? `${selectedTree.gps_lat}, ${selectedTree.gps_lng}` : "Pending"} />
+                    <CertInfo label="Planted" value={formatDate(selectedTree.planted_at)} />
+                    <CertInfo label="Harvest Estimate" value={harvestEstimateText(selectedTree)} />
+                    <CertInfo label="Latest Health" value={latestLog?.health_status || "No update yet"} />
                   </div>
                 </div>
 
-                <button
-                  disabled
-                  className="mt-5 w-full rounded-xl bg-emerald-900 px-5 py-3 font-bold text-yellow-100 opacity-70"
-                >
-                  Download Certificate — Coming next phase
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+                <p className="mt-6 text-center text-xs leading-6 text-slate-600">
+                  This is a platform certificate preview. Final certificate issuance may require admin verification, DENR tag confirmation, and plantation record validation.
+                </p>
+              </>
+            )}
+          </div>
 
-        <p className="mt-8 text-xs leading-relaxed text-emerald-300">
-          No guaranteed returns. Actual harvest depends on plantation performance,
-          market conditions, inoculation schedule, and applicable laws.
-        </p>
+          <p className="mt-6 text-xs leading-6 text-green-100/60">
+            Disclaimer: No guaranteed returns. Actual harvest depends on plantation performance, market conditions, inoculation schedule, and applicable laws.
+          </p>
+        </div>
       </section>
     </main>
   );
+}
+
+function CertInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-300 bg-white/75 p-3">
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 font-black text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function Empty({ text }: { text: string }) {
+  return <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm font-bold text-white/60">{text}</div>;
 }
