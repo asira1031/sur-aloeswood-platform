@@ -1,338 +1,184 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
-
-type AnyRow = Record<string, any>;
+import { investorLinks, formatDate, peso, statusClass, type AnyRow } from "@/app/lib/dashboard/nav";
 
 const SEEDLING_PRICE = 14000;
-
-const money = (amount?: number | null) =>
-  `₱${Number(amount || 0).toLocaleString("en-PH", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-
-const formatDate = (value?: string | null) => {
-  if (!value) return "Pending";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleDateString("en-PH", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-};
-
-function statusClass(status?: string | null) {
-  const value = String(status || "").toUpperCase();
-  if (["ACTIVE", "APPROVED", "REGISTERED", "HEALTHY", "GROWING", "PAID"].includes(value)) {
-    return "bg-green-400/15 text-green-100 ring-green-300/30";
-  }
-  if (["PENDING", "PROCESSING", "ASSIGNED", "FOR_REVIEW"].includes(value)) {
-    return "bg-yellow-400/15 text-yellow-100 ring-yellow-300/30";
-  }
-  if (["REJECTED", "FAILED", "SICK", "DAMAGED", "CANCELLED"].includes(value)) {
-    return "bg-red-400/15 text-red-100 ring-red-300/30";
-  }
-  return "bg-white/10 text-white/75 ring-white/10";
-}
 
 export default function InvestorDashboardPage() {
   const [email, setEmail] = useState("");
   const [profile, setProfile] = useState<AnyRow | null>(null);
   const [wallet, setWallet] = useState<AnyRow | null>(null);
   const [trees, setTrees] = useState<AnyRow[]>([]);
-  const [growthLogs, setGrowthLogs] = useState<AnyRow[]>([]);
-  const [transactions, setTransactions] = useState<AnyRow[]>([]);
+  const [logs, setLogs] = useState<AnyRow[]>([]);
   const [purchases, setPurchases] = useState<AnyRow[]>([]);
+  const [notifications, setNotifications] = useState<AnyRow[]>([]);
+  const [tickets, setTickets] = useState<AnyRow[]>([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const totalTreeValue = useMemo(() => trees.length * SEEDLING_PRICE, [trees.length]);
-  const pendingPurchases = purchases.filter((p) => String(p.status || "").toUpperCase() === "PENDING").length;
-  const approvedPurchases = purchases.filter((p) => String(p.status || "").toUpperCase() === "APPROVED").length;
-
   useEffect(() => {
-    const savedEmail = localStorage.getItem("sur_login_email") || "";
-    setEmail(savedEmail);
-    if (savedEmail) loadDashboard(savedEmail);
+    const saved = localStorage.getItem("sur_login_email") || "";
+    setEmail(saved);
+    if (saved) loadDashboard(saved);
   }, []);
 
   async function loadDashboard(targetEmail = email) {
     setLoading(true);
     setMessage("");
-
     const cleanEmail = targetEmail.toLowerCase().trim();
 
-    if (!cleanEmail) {
-      setMessage("Enter your registered email first.");
-      setLoading(false);
-      return;
-    }
-
-    const { data: foundProfile, error: profileError } = await supabase
+    const { data: profileRow, error } = await supabase
       .from("profiles")
-      .select("id, full_name, email, referral_code, kyc_status, account_status, membership_status, wallet_balance, role")
+      .select("id, full_name, email, role, account_status, kyc_status, membership_status, wallet_balance, referral_code, created_at")
       .eq("email", cleanEmail)
       .maybeSingle();
 
-    if (profileError || !foundProfile) {
+    if (error || !profileRow) {
+      setMessage(error?.message || "Profile not found.");
       setProfile(null);
-      setMessage(profileError?.message || "Profile not found.");
       setLoading(false);
       return;
     }
 
-    const [{ data: walletData }, { data: treeData }, { data: purchaseData }, { data: txData }] = await Promise.all([
-      supabase.from("wallets").select("id, profile_id, balance, updated_at").eq("profile_id", foundProfile.id).maybeSingle(),
-      supabase
-        .from("tree_registry")
-        .select("id, profile_id, purchase_id, tree_code, denr_tag_number, species, status, gps_lat, gps_lng, planted_at, created_at")
-        .eq("profile_id", foundProfile.id)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("seedling_purchases")
-        .select("id, profile_id, quantity, amount, status, payment_reference, created_at, approved_at")
-        .eq("profile_id", foundProfile.id)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("wallet_transactions")
-        .select("id, profile_id, transaction_type, amount, description, status, created_at")
-        .eq("profile_id", foundProfile.id)
-        .order("created_at", { ascending: false })
-        .limit(12),
+    const [{ data: walletRow }, { data: treeRows }, { data: purchaseRows }, { data: noticeRows }, { data: ticketRows }] = await Promise.all([
+      supabase.from("wallets").select("id, profile_id, balance, updated_at").eq("profile_id", profileRow.id).maybeSingle(),
+      supabase.from("tree_registry").select("id, profile_id, purchase_id, tree_code, denr_tag_number, species, status, gps_lat, gps_lng, planted_at, created_at").eq("profile_id", profileRow.id).order("created_at", { ascending: false }),
+      supabase.from("seedling_purchases").select("id, profile_id, quantity, amount, status, payment_reference, created_at, approved_at").eq("profile_id", profileRow.id).order("created_at", { ascending: false }).limit(100),
+      supabase.from("notifications").select("id, profile_id, title, message, is_read, created_at").eq("profile_id", profileRow.id).order("created_at", { ascending: false }).limit(50),
+      supabase.from("support_tickets").select("id, profile_id, subject, message, status, created_at").eq("profile_id", profileRow.id).order("created_at", { ascending: false }).limit(50),
     ]);
 
-    const treeIds = (treeData || []).map((tree: AnyRow) => tree.id);
-
-    let logs: AnyRow[] = [];
+    const treeIds = (treeRows || []).map((tree: AnyRow) => tree.id);
+    let logRows: AnyRow[] = [];
     if (treeIds.length > 0) {
-      const { data: logData } = await supabase
-        .from("tree_growth_logs")
-        .select("id, tree_id, height_cm, diameter_cm, health_status, remarks, photo_url, created_at")
-        .in("tree_id", treeIds)
-        .order("created_at", { ascending: false });
-      logs = (logData || []) as AnyRow[];
+      const { data } = await supabase.from("tree_growth_logs").select("id, tree_id, height_cm, diameter_cm, health_status, remarks, photo_url, created_at").in("tree_id", treeIds).order("created_at", { ascending: false });
+      logRows = (data || []) as AnyRow[];
     }
 
-    setProfile(foundProfile);
-    setWallet(walletData || null);
-    setTrees((treeData || []) as AnyRow[]);
-    setPurchases((purchaseData || []) as AnyRow[]);
-    setTransactions((txData || []) as AnyRow[]);
-    setGrowthLogs(logs);
+    setProfile(profileRow);
+    setWallet(walletRow || null);
+    setTrees((treeRows || []) as AnyRow[]);
+    setLogs(logRows);
+    setPurchases((purchaseRows || []) as AnyRow[]);
+    setNotifications((noticeRows || []) as AnyRow[]);
+    setTickets((ticketRows || []) as AnyRow[]);
     localStorage.setItem("sur_login_email", cleanEmail);
-    localStorage.setItem("sur_profile_id", foundProfile.id);
+    localStorage.setItem("sur_profile_id", profileRow.id);
     setLoading(false);
   }
 
-  function latestLog(treeId: string) {
-    return growthLogs.find((log) => log.tree_id === treeId) || null;
-  }
-
-  const referralLink =
-    typeof window !== "undefined" && profile?.referral_code
-      ? `${window.location.origin}/register?ref=${profile.referral_code}`
-      : "";
+  const pendingPurchases = purchases.filter((p) => String(p.status || "").toUpperCase() === "PENDING").length;
+  const unread = notifications.filter((n) => !n.is_read).length;
+  const openTickets = tickets.filter((t) => String(t.status || "").toUpperCase() === "OPEN").length;
+  const portfolioValue = trees.length * SEEDLING_PRICE;
+  const referralLink = typeof window !== "undefined" && profile?.referral_code ? `${window.location.origin}/register?ref=${profile.referral_code}` : "";
 
   return (
     <main className="min-h-screen bg-[#06170f] text-white">
       <section className="border-b border-white/10 bg-gradient-to-r from-green-950 via-emerald-950 to-slate-950 px-6 py-8 lg:px-14">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-start justify-between gap-5">
           <div>
-            <p className="text-sm font-bold uppercase tracking-[0.3em] text-green-300">SUR Aloeswood Co-Planter Portal</p>
-            <h1 className="mt-3 text-4xl font-black lg:text-6xl">My Plantation Dashboard</h1>
-            <p className="mt-3 max-w-3xl text-green-100/80">
-              Monitor wallet, AG tree codes, DENR tags, GPS location, growth updates, certificates, and plantation progress.
-            </p>
+            <p className="text-sm font-black uppercase tracking-[0.3em] text-green-300">SUR ALOESWOOD CO-PLANTER</p>
+            <h1 className="mt-3 text-4xl font-black lg:text-6xl">Co-Planter Dashboard</h1>
+            <p className="mt-3 max-w-3xl text-green-100/80">Open every co-planter feature from this dashboard.</p>
           </div>
-
           <div className="flex flex-wrap gap-3">
-            <Link href="/investor/marketplace" className="rounded-2xl bg-green-500 px-6 py-4 text-center font-black text-green-950">
-              Buy Seedlings
-            </Link>
-            <Link href="/tree" className="rounded-2xl bg-white/10 px-6 py-4 text-center font-black text-white ring-1 ring-white/20">
-              My Trees
-            </Link>
+            <Link href="/investor/marketplace" className="rounded-2xl bg-green-500 px-5 py-3 text-sm font-black text-green-950">Buy Seedlings</Link>
+            <Link href="/investor/settings" className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-sm font-black">Settings</Link>
           </div>
         </div>
 
-        <div className="mt-8 flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/10 p-4 backdrop-blur lg:flex-row">
-          <input
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              localStorage.setItem("sur_login_email", e.target.value);
-            }}
-            placeholder="Enter registered email to load dashboard"
-            className="min-h-14 flex-1 rounded-2xl border border-white/10 bg-white px-5 font-semibold text-slate-900 outline-none"
-          />
-          <button
-            onClick={() => loadDashboard()}
-            disabled={loading}
-            className="rounded-2xl bg-green-500 px-8 py-4 font-black text-green-950 hover:bg-green-400 disabled:bg-slate-500"
-          >
-            {loading ? "Loading..." : "Load Dashboard"}
-          </button>
+        <div className="mt-8 grid gap-3 rounded-3xl border border-white/10 bg-white/10 p-4 md:grid-cols-[1fr_auto]">
+          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Registered email" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
+          <button onClick={() => loadDashboard()} disabled={loading} className="rounded-2xl bg-green-500 px-8 py-4 text-sm font-black text-green-950 disabled:bg-slate-500">{loading ? "Loading..." : "Load Dashboard"}</button>
         </div>
-
-        {message && <div className="mt-4 rounded-2xl bg-yellow-400/15 px-5 py-4 text-sm font-bold text-yellow-100">{message}</div>}
+        {message && <div className="mt-4 rounded-2xl border border-yellow-300/30 bg-yellow-400/15 px-5 py-4 text-sm font-bold text-yellow-100">{message}</div>}
       </section>
 
-      <section className="px-6 py-8 lg:px-14">
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-          <Card title="Wallet Balance" value={money(wallet?.balance ?? profile?.wallet_balance)} />
-          <Card title="Registered AG Trees" value={String(trees.length)} />
-          <Card title="Estimated Tree Value" value={money(totalTreeValue)} />
-          <Card title="Pending Purchases" value={String(pendingPurchases)} />
+      <section className="grid gap-5 px-6 py-8 md:grid-cols-2 xl:grid-cols-6 lg:px-14">
+        <Metric title="Wallet" value={peso(wallet?.balance ?? profile?.wallet_balance)} />
+        <Metric title="AG Trees" value={String(trees.length)} />
+        <Metric title="Portfolio" value={peso(portfolioValue)} />
+        <Metric title="Pending Purchases" value={String(pendingPurchases)} />
+        <Metric title="Unread" value={String(unread)} />
+        <Metric title="Open Support" value={String(openTickets)} />
+      </section>
+
+      <section className="grid gap-6 px-6 pb-16 lg:grid-cols-[1.15fr_0.85fr] lg:px-14">
+        <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
+          <h2 className="text-3xl font-black">Open Features</h2>
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {investorLinks.map((link) => (
+              <Link key={link.href} href={link.href} className="rounded-2xl border border-white/10 bg-black/25 p-5 transition hover:border-green-300/50 hover:bg-green-400/10">
+                <p className="text-lg font-black text-green-200">{link.title}</p>
+                <p className="mt-2 text-sm leading-6 text-white/60">{link.desc}</p>
+              </Link>
+            ))}
+          </div>
         </div>
 
-        <div className="mt-8 grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
-          <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-black">My AG Trees</h2>
-                <p className="mt-1 text-sm text-green-100/70">AG codes appear here after admin approval.</p>
-              </div>
-              <span className="rounded-full bg-green-400/15 px-4 py-2 text-sm font-black text-green-200">{trees.length} Trees</span>
+        <div className="space-y-6">
+          <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
+            <h2 className="text-3xl font-black">Account</h2>
+            <div className="mt-5 space-y-3">
+              <Info label="Name" value={profile?.full_name || "Not loaded"} />
+              <Info label="Email" value={profile?.email || "-"} />
+              <Info label="Account" value={profile?.account_status || "PENDING"} />
+              <Info label="KYC" value={profile?.kyc_status || "PENDING"} />
+              <Info label="Membership" value={profile?.membership_status || "PENDING"} />
+              <Info label="Referral" value={profile?.referral_code || "Pending"} />
             </div>
+            <div className="mt-4 break-all rounded-2xl bg-black/25 p-4 text-xs font-bold text-green-200">{referralLink || "Referral link appears after profile load."}</div>
+          </div>
 
-            <div className="mt-6 grid gap-4">
-              {trees.length === 0 ? (
-                <Empty text="No tree registry yet. Once your purchase is approved, AG codes will appear here automatically." />
-              ) : (
-                trees.map((tree) => {
-                  const log = latestLog(tree.id);
-                  return (
-                    <div key={tree.id} className="overflow-hidden rounded-3xl border border-white/10 bg-black/20">
-                      {log?.photo_url && (
-                        <div className="h-52 bg-black/30">
-                          <img src={log.photo_url} alt="Latest tree update" className="h-full w-full object-cover" />
-                        </div>
-                      )}
-
-                      <div className="p-5">
-                        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                          <div>
-                            <p className="text-xs font-black uppercase tracking-[0.25em] text-green-300">AG Tree Code</p>
-                            <p className="mt-1 text-3xl font-black text-yellow-300">{tree.tree_code || "Pending AG Code"}</p>
-                            <p className="mt-1 text-sm text-white/70">{tree.species || "Aquilaria Malaccensis"}</p>
-                          </div>
-
-                          <span className={`rounded-full px-4 py-2 text-sm font-black ring-1 ${statusClass(tree.status)}`}>
-                            {tree.status || "REGISTERED"}
-                          </span>
-                        </div>
-
-                        <div className="mt-5 grid gap-3 text-sm text-white/75 md:grid-cols-3">
-                          <Info label="DENR Tag" value={tree.denr_tag_number || "Pending"} />
-                          <Info label="GPS" value={tree.gps_lat && tree.gps_lng ? `${tree.gps_lat}, ${tree.gps_lng}` : "Pending"} />
-                          <Info label="Planted Date" value={formatDate(tree.planted_at)} />
-                        </div>
-
-                        <div className="mt-4 rounded-2xl bg-black/30 p-4">
-                          <p className="text-xs font-bold uppercase tracking-wide text-green-300">Latest Growth Update</p>
-                          <p className="mt-2 text-sm text-white/80">{log?.remarks || "No growth update yet."}</p>
-                          <div className="mt-3 grid gap-2 text-xs font-bold text-white/55 md:grid-cols-3">
-                            <span>Height: {log?.height_cm || "-"} cm</span>
-                            <span>Diameter: {log?.diameter_cm || "-"} cm</span>
-                            <span>Health: {log?.health_status || "-"}</span>
-                          </div>
-                        </div>
-                      </div>
+          <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
+            <h2 className="text-3xl font-black">Recent AG Trees</h2>
+            <div className="mt-5 space-y-3">
+              {trees.slice(0, 5).map((tree) => (
+                <Link key={tree.id} href="/investor/my-trees" className="block rounded-2xl bg-black/25 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-black text-yellow-300">{tree.tree_code || "Pending AG Code"}</p>
+                      <p className="mt-1 text-xs text-white/45">{tree.denr_tag_number || "DENR pending"} • {formatDate(tree.planted_at)}</p>
                     </div>
-                  );
-                })
-              )}
+                    <span className={`rounded-full border px-3 py-1 text-xs font-black ${statusClass(tree.status)}`}>{tree.status || "REGISTERED"}</span>
+                  </div>
+                </Link>
+              ))}
+              {trees.length === 0 && <Empty text="No AG trees yet." />}
             </div>
           </div>
 
-          <div className="space-y-6">
-            <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6">
-              <h2 className="text-2xl font-black">Co-Planter Profile</h2>
-              <div className="mt-5 space-y-3 text-sm">
-                <Info label="Name" value={profile?.full_name || "Not loaded"} />
-                <Info label="Email" value={profile?.email || "Not loaded"} />
-                <Info label="KYC" value={profile?.kyc_status || "Pending"} />
-                <Info label="Account" value={profile?.account_status || "Pending"} />
-                <Info label="Membership" value={profile?.membership_status || "Pending"} />
-                <Info label="Referral Code" value={profile?.referral_code || "Pending"} />
-              </div>
-            </div>
-
-            <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6">
-              <h2 className="text-2xl font-black">Referral Link</h2>
-              <p className="mt-2 text-sm text-white/70">Share this after your account is approved.</p>
-              <div className="mt-4 break-all rounded-2xl bg-black/30 p-4 text-sm text-green-200">
-                {referralLink || "Load your profile first."}
-              </div>
-            </div>
-
-            <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6">
-              <h2 className="text-2xl font-black">Purchase Summary</h2>
-              <div className="mt-5 space-y-3 text-sm">
-                <Info label="Approved Purchases" value={String(approvedPurchases)} />
-                <Info label="Pending Purchases" value={String(pendingPurchases)} />
-                <Info label="Seedling Price" value={money(SEEDLING_PRICE)} />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-8 rounded-[2rem] border border-white/10 bg-white/[0.06] p-6">
-          <h2 className="text-2xl font-black">Wallet Transactions</h2>
-          <div className="mt-5 grid gap-3">
-            {transactions.length === 0 ? (
-              <Empty text="No wallet transactions yet." />
-            ) : (
-              transactions.map((tx) => (
-                <div key={tx.id} className="flex flex-col justify-between gap-3 rounded-2xl bg-black/20 px-5 py-4 md:flex-row md:items-center">
-                  <div>
-                    <p className="font-black">{tx.transaction_type}</p>
-                    <p className="text-sm text-white/60">{tx.description || "No description"}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-black text-green-300">{money(tx.amount)}</p>
-                    <p className="text-xs text-white/50">{tx.status}</p>
-                  </div>
+          <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
+            <h2 className="text-3xl font-black">Latest Growth Updates</h2>
+            <div className="mt-5 space-y-3">
+              {logs.slice(0, 5).map((log) => (
+                <div key={log.id} className="rounded-2xl bg-black/25 p-4">
+                  <p className="font-black text-green-200">{log.health_status || "Growth Update"}</p>
+                  <p className="mt-1 text-sm text-white/60">{log.remarks || "-"}</p>
+                  <p className="mt-2 text-xs text-white/45">{formatDate(log.created_at)}</p>
                 </div>
-              ))
-            )}
+              ))}
+              {logs.length === 0 && <Empty text="No growth updates yet." />}
+            </div>
           </div>
         </div>
-
-        <p className="mt-8 text-xs leading-relaxed text-green-200/70">
-          Disclaimer: No guaranteed returns. Actual harvest depends on plantation performance, market conditions, inoculation schedule, and applicable laws.
-        </p>
       </section>
     </main>
   );
 }
 
-function Card({ title, value }: { title: string; value: string }) {
-  return (
-    <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6 shadow-xl">
-      <p className="text-sm font-bold text-green-200/80">{title}</p>
-      <p className="mt-3 text-3xl font-black">{value}</p>
-    </div>
-  );
+function Metric({ title, value }: { title: string; value: string }) {
+  return <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-5"><p className="text-xs font-black uppercase tracking-wide text-green-100/60">{title}</p><p className="mt-3 truncate text-xl font-black text-green-300">{value}</p></div>;
 }
 
 function Info({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl bg-black/20 px-4 py-3">
-      <span className="text-white/50">{label}</span>
-      <span className="text-right font-bold text-white">{value}</span>
-    </div>
-  );
+  return <div className="flex items-center justify-between gap-4 rounded-2xl bg-black/25 px-4 py-3"><span className="text-sm text-white/50">{label}</span><span className="text-right text-sm font-black text-white">{value}</span></div>;
 }
 
 function Empty({ text }: { text: string }) {
-  return (
-    <div className="rounded-3xl border border-dashed border-white/15 bg-black/20 p-8 text-center text-sm font-semibold text-white/60">
-      {text}
-    </div>
-  );
+  return <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm font-bold text-white/60">{text}</div>;
 }
