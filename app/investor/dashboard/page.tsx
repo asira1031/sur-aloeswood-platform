@@ -229,6 +229,8 @@ export default function InvestorDashboardPage() {
   const portfolioValue = packagePriceForQuantity(trees.length);
   const walletValue = Number(wallet?.balance ?? profile?.wallet_balance ?? 0);
   const totalPurchased = purchases.reduce((sum, purchase) => sum + Number(purchase.amount || 0), 0);
+  const initialLoading = loading && !profile;
+  const loadingValue = (value: string) => (initialLoading ? "Loading" : value);
   const latestPurchase = purchases[0];
   const latestTree = trees[0];
   const latestLog = logs[0];
@@ -359,9 +361,9 @@ export default function InvestorDashboardPage() {
             </div>
 
             <div className="relative z-10 mt-8 grid gap-3 md:grid-cols-3">
-              <HeroStat label="Wallet Balance" value={peso(walletValue)} />
-              <HeroStat label="Portfolio Reference" value={peso(portfolioValue)} />
-              <HeroStat label="AG Trees" value={`${activeTrees}/${trees.length}`} />
+              <HeroStat label="Wallet Balance" value={loadingValue(peso(walletValue))} />
+              <HeroStat label="Portfolio Reference" value={loadingValue(peso(portfolioValue))} />
+              <HeroStat label="AG Trees" value={loadingValue(`${activeTrees}/${trees.length}`)} />
             </div>
 
             {message && (
@@ -372,10 +374,10 @@ export default function InvestorDashboardPage() {
           </section>
 
           <section className={`grid gap-4 py-5 md:grid-cols-2 ${compact ? "xl:grid-cols-6" : "xl:grid-cols-4"}`}>
-            <Metric tone="gold" title="Total Purchased" value={peso(totalPurchased)} detail="Recorded package payments" />
-            <Metric tone="forest" title="Pending Orders" value={String(pendingPurchases)} detail="Awaiting admin review" />
-            <Metric tone="white" title="Unread Alerts" value={String(unread)} detail="Notifications to review" />
-            <Metric tone="mist" title="Open Support" value={String(openTickets)} detail="Active help tickets" />
+            <Metric tone="gold" title="Total Purchased" value={loadingValue(peso(totalPurchased))} detail="Recorded package payments" />
+            <Metric tone="forest" title="Pending Orders" value={loadingValue(String(pendingPurchases))} detail="Awaiting admin review" />
+            <Metric tone="white" title="Unread Alerts" value={loadingValue(String(unread))} detail="Notifications to review" />
+            <Metric tone="mist" title="Open Support" value={loadingValue(String(openTickets))} detail="Active help tickets" />
           </section>
 
           <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">

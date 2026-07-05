@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { calculatePlatformFee } from "@/app/lib/finance/fee-distribution";
 import { supabase } from "@/app/lib/supabase/client";
 
 type Profile = {
@@ -72,13 +73,13 @@ const formatDate = (value?: string | null) => {
 const normalize = (value?: string | null) => String(value || "").toUpperCase();
 
 const companyPaymentContact = {
-  payee: "SUR Aloeswood Corporation",
-  bank: "BDO",
-  accountName: "Donnabel Cabrido",
-  accountNumber: "010148009036",
+  payee: "Janica Maldives",
+  bank: "Maya Wallet / PayMaya",
+  accountName: "Janica Maldives",
+  accountNumber: "09498387452",
   address: "Sitio Morales, Centrala, Surallah, South Cotabato",
   email: "suraloeswoodcorporation@gmail.com",
-  mobile: "+63 991 128 6188",
+  mobile: "09498387452",
 };
 
 const customerHiddenTransactionTypes = new Set(["PACKAGE_DISTRIBUTION_LEDGER"]);
@@ -267,7 +268,7 @@ export default function InvestorWalletPage() {
       profile_id: profile.id,
       amount,
       reference_no: reference,
-      description: `Investor cash-in submitted from wallet page. Reference: ${reference}`,
+      description: `Investor cash-in submitted from wallet page. Reference: ${reference}. Full payment is sent to the official Maya receiving wallet; after verification this becomes system money in the app.`,
       status: "PENDING",
     });
 
@@ -280,7 +281,7 @@ export default function InvestorWalletPage() {
 
     setCashInAmount("");
     setCashInReference("");
-    showNotice("Cash-in request submitted. Admin Treasury will verify and credit your wallet.", "success");
+    showNotice(`Cash-in request submitted. Once verified, ${peso(amount)} will be credited to your wallet.`, "success");
     await loadWallet(profile.email || email);
   }
 
@@ -293,6 +294,7 @@ export default function InvestorWalletPage() {
     }
 
     const amount = Number(withdrawAmount);
+    const feeQuote = calculatePlatformFee(amount);
     const selectedPayout = linkedAccounts.find((account) => account.id === selectedPayoutId);
     const approvedPayout = selectedPayout || linkedAccounts.find((account) => normalize(account.status) === "APPROVED") || linkedAccounts[0];
 
@@ -325,7 +327,7 @@ export default function InvestorWalletPage() {
       amount,
       description: `Withdrawal request ${requestReference}. Payout: ${
         approvedPayout.provider_name || approvedPayout.account_type || "linked account"
-      } ${approvedPayout.account_number || ""}.`,
+      } ${approvedPayout.account_number || ""}. Gross: ${peso(amount)}. Platform fee: ${peso(feeQuote.fee)}. Net payout: ${peso(feeQuote.net)}.`,
       status: "PENDING",
     });
 
@@ -337,7 +339,7 @@ export default function InvestorWalletPage() {
     }
 
     setWithdrawAmount("");
-    showNotice("Withdrawal request submitted. Admin Withdrawals will review and process it.", "success");
+    showNotice(`Withdrawal request submitted. Net payout after platform fee will be ${peso(feeQuote.net)}.`, "success");
     await loadWallet(profile.email || email);
   }
 
@@ -389,6 +391,7 @@ export default function InvestorWalletPage() {
   const latestTransactions = transactions.slice(0, 8);
   const selectedPayout = linkedAccounts.find((account) => account.id === selectedPayoutId) || linkedAccounts[0];
   const walletBalance = Number(wallet?.balance || 0);
+  const withdrawQuote = calculatePlatformFee(Number(withdrawAmount || 0));
   const canWithdraw = Boolean(profile && wallet && walletBalance > 0 && normalize(profile.kyc_status) === "APPROVED" && selectedPayout);
 
   return (
@@ -439,7 +442,7 @@ export default function InvestorWalletPage() {
             </div>
           )}
           <div className="relative z-10 mt-5 rounded-2xl border border-white/20 bg-white/15 px-5 py-4 text-sm font-bold leading-7 text-white/82 backdrop-blur">
-            This wallet is a ledger and request center. Send real payment only to the official SUR payment account below. After admin verifies the receipt, your wallet is credited and the finance split is recorded internally by Treasury.
+            This wallet is a ledger and request center. Send 100% of your payment only to the official Maya receiving wallet below. After admin verifies the receipt, the amount becomes system money in your wallet and finance handles manual distribution internally.
           </div>
         </section>
 
@@ -482,7 +485,7 @@ export default function InvestorWalletPage() {
                 <h2 className="text-2xl font-black text-slate-950">Official Cash-In Account</h2>
                 <p className="mt-1 text-sm text-slate-600">Send the payment first, then submit the amount and reference number on the right.</p>
               </div>
-              <Badge value="OFFICIAL BDO" />
+              <Badge value="OFFICIAL MAYA" />
             </div>
             <div className="mt-5 grid gap-3">
               <Info label="Payee" value={companyPaymentContact.payee} />
@@ -492,9 +495,9 @@ export default function InvestorWalletPage() {
               <Info label="Email" value={companyPaymentContact.email} />
             </div>
             <div className="mt-4 grid gap-3">
-              <FlowStep title="1. Send Payment" text="Use the official BDO account shown here. Keep the receipt or transaction reference." />
+              <FlowStep title="1. Send Payment" text="Use the official Maya wallet shown here. Send the full amount and keep the receipt or InstaPay/Maya reference." />
               <FlowStep title="2. Submit Reference" text="Enter the exact amount sent and the payment reference number for admin verification." />
-              <FlowStep title="3. Wait For Approval" text="Treasury verifies the receipt, credits your wallet, and records the internal percentage distribution." />
+              <FlowStep title="3. Wait For Approval" text="Treasury verifies the receipt, credits your full wallet amount, and records the internal finance allocation for manual settlement." />
             </div>
           </section>
 
@@ -526,9 +529,19 @@ export default function InvestorWalletPage() {
                   <input
                     value={cashInReference}
                     onChange={(event) => setCashInReference(event.target.value)}
-                    placeholder="BDO receipt / payment reference number"
+                    placeholder="Maya / InstaPay receipt reference number"
                     className="rounded-2xl border border-emerald-100 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
                   />
+                  <div className="rounded-2xl border border-emerald-100 bg-white/80 p-4 text-emerald-950">
+                    <p className="text-xs font-black uppercase tracking-wide opacity-60">Cash-In Credit Preview</p>
+                    <div className="mt-3 flex items-center justify-between gap-3 text-sm">
+                      <span className="font-bold opacity-70">Wallet Credit After Verification</span>
+                      <span className="font-black">{peso(Number(cashInAmount || 0))}</span>
+                    </div>
+                    <p className="mt-2 text-xs font-bold leading-5 opacity-70">
+                      Distribution to SUR/TDI/partners is an internal finance settlement after payment verification.
+                    </p>
+                  </div>
                   <button
                     onClick={submitCashIn}
                     disabled={submittingCashIn || !profile}
@@ -597,6 +610,14 @@ export default function InvestorWalletPage() {
                     onChange={(event) => setPayoutNumber(event.target.value)}
                     placeholder="Account number / mobile number"
                     className="rounded-2xl border border-amber-100 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-amber-400"
+                  />
+                  <FeePreview
+                    tone="amber"
+                    grossLabel="Wallet Deduction"
+                    netLabel="Net Payout"
+                    gross={withdrawQuote.gross}
+                    fee={withdrawQuote.fee}
+                    net={withdrawQuote.net}
                   />
                   <div className="grid gap-3 md:grid-cols-2">
                     <button
@@ -679,6 +700,47 @@ function FlowStep({ title, text }: { title: string; text: string }) {
     <div className="rounded-2xl border border-white bg-white/75 p-4">
       <p className="text-sm font-black text-slate-950">{title}</p>
       <p className="mt-2 text-sm leading-6 text-slate-600">{text}</p>
+    </div>
+  );
+}
+
+function FeePreview({
+  tone,
+  grossLabel,
+  netLabel,
+  gross,
+  fee,
+  net,
+}: {
+  tone: "emerald" | "amber";
+  grossLabel: string;
+  netLabel: string;
+  gross: number;
+  fee: number;
+  net: number;
+}) {
+  const style =
+    tone === "emerald"
+      ? "border-emerald-100 bg-white/80 text-emerald-950"
+      : "border-amber-100 bg-white/80 text-amber-950";
+
+  return (
+    <div className={`rounded-2xl border p-4 ${style}`}>
+      <p className="text-xs font-black uppercase tracking-wide opacity-60">Platform Fee Preview</p>
+      <div className="mt-3 grid gap-2 text-sm">
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-bold opacity-70">{grossLabel}</span>
+          <span className="font-black">{peso(gross)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-bold opacity-70">Platform Fee to TDI</span>
+          <span className="font-black">{peso(fee)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3 border-t border-current/10 pt-2">
+          <span className="font-black">{netLabel}</span>
+          <span className="font-black">{peso(net)}</span>
+        </div>
+      </div>
     </div>
   );
 }

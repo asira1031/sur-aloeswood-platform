@@ -403,7 +403,7 @@ export default function AdminCoPlantersPage() {
                     onClick={() => updateProfileStatus(selected, "ACTIVE")}
                     className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60"
                   >
-                    Activate Account
+                    Activate / Restore Account
                   </button>
                   <button
                     disabled={busyId === selected.id}

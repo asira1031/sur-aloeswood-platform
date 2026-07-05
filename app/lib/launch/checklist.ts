@@ -16,15 +16,15 @@ export const launchChecklist: LaunchChecklistItem[] = [
   },
   {
     area: "Wallet",
-    status: "NEEDS_ENV",
+    status: "PASS",
     title: "Server wallet purchase key",
-    detail: "Set SUPABASE_SERVICE_ROLE_KEY in local and Vercel server environment for protected wallet seedling purchase.",
+    detail: "Local server wallet purchase key is configured. Confirm the same server-only key in Vercel before production deploy.",
   },
   {
     area: "Database",
-    status: "NEEDS_SQL",
+    status: "PASS",
     title: "RLS policy hardening",
-    detail: "Replace broad anon policies with authenticated user/admin policies before real customers use the platform.",
+    detail: "RLS hardening and login access repair were applied successfully. Continue role UAT before customer onboarding.",
   },
   {
     area: "Auth",
@@ -60,7 +60,7 @@ export const launchChecklist: LaunchChecklistItem[] = [
     area: "Deploy",
     status: "NEEDS_UAT",
     title: "Vercel production deploy",
-    detail: "After SQL/env hardening, deploy to Vercel and run smoke tests against the production URL.",
+    detail: "Configure production environment variables in Vercel, deploy, then run smoke tests against the production URL.",
   },
 ];
 

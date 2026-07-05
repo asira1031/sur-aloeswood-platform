@@ -51,9 +51,9 @@ export default function FarmerReportsPage() {
 
     const [{ data: assignmentRows }, { data: treeRows }, { data: logRows }, { data: notificationRows }] =
       await Promise.all([
-        supabase.from("gardener_assignments").select("id, gardener_id, tree_id, status, assigned_at").eq("gardener_id", gardenerRow.id),
-        supabase.from("trees").select("id, tree_id, profile_id, farm_id, qr_code, age_months, height_cm, current_value, harvest_estimate_year, status, created_at"),
-        supabase.from("tree_growth_logs").select("id, tree_id, height_cm, diameter_cm, health_status, remarks, photo_url, created_at").order("created_at", { ascending: false }),
+        supabase.from("gardener_assignments").select("*").eq("gardener_id", gardenerRow.id),
+        supabase.from("tree_registry").select("id, profile_id, purchase_id, tree_code, denr_tag_number, species, status, gps_lat, gps_lng, farm_id, farm_location_note, planted_at, created_at"),
+        supabase.from("tree_growth_logs").select("id, profile_id, tree_id, tree_code, gardener_id, height_cm, diameter_cm, health_status, remarks, notes, photo_url, status, created_at").order("created_at", { ascending: false }),
         supabase.from("notifications").select("id, profile_id, title, message, is_read, created_at").order("created_at", { ascending: false }).limit(100),
       ]);
 
@@ -89,21 +89,21 @@ export default function FarmerReportsPage() {
   }, [trees, logs]);
 
   return (
-    <main className="min-h-screen bg-[#04140d] text-white">
-      <section className="border-b border-white/10 px-6 py-8 md:px-10">
+    <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
+      <section className="border-b border-emerald-100 bg-white px-4 py-6 shadow-sm sm:px-6 md:px-10">
         <div className="mx-auto max-w-7xl">
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.35em] text-green-300">SUR ALOESWOOD FARMER</p>
+              <p className="text-xs font-black uppercase tracking-[0.35em] text-emerald-700">SUR ALOESWOOD FARMER</p>
               <h1 className="mt-4 text-4xl font-black md:text-6xl">Farmer Reports</h1>
             </div>
             <div className="flex flex-wrap gap-3">
-              <Link href="/farmer/dashboard" className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-sm font-black">Dashboard</Link>
-              <Link href="/farmer/profile" className="rounded-2xl bg-green-500 px-5 py-3 text-sm font-black text-green-950">Profile</Link>
+              <Link href="/farmer/dashboard" className="rounded-2xl border border-emerald-100 bg-white px-5 py-3 text-sm font-black text-emerald-900 hover:bg-emerald-50">Dashboard</Link>
+              <Link href="/farmer/profile" className="rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-black text-white hover:bg-emerald-700">Profile</Link>
             </div>
           </div>
 
-          {message && <div className="mt-4 rounded-2xl border border-yellow-300/30 bg-yellow-400/15 px-5 py-4 text-sm font-bold text-yellow-100">{message}</div>}
+          {message && <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-900">{message}</div>}
         </div>
       </section>
 
@@ -119,44 +119,44 @@ export default function FarmerReportsPage() {
       </section>
 
       <section className="mx-auto grid max-w-7xl gap-6 px-6 pb-16 md:px-10 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
+        <div className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
           <h2 className="text-3xl font-black">Tree Report Summary</h2>
 
           <div className="mt-6 space-y-3">
             {latestTreeReports.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-black/25 p-6 text-sm font-bold text-white/60">No tree reports found.</div>
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm font-bold text-slate-500">No tree reports found.</div>
             ) : (
               latestTreeReports.map(({ tree, latestLog, logCount }) => (
-                <div key={tree.id} className="rounded-2xl border border-white/10 bg-black/25 p-5">
+                <div key={tree.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="text-lg font-black text-green-200">{getTreeLabel(tree)}</p>
-                      <p className="mt-1 text-sm text-white/60">Logs: {logCount}</p>
-                      <p className="mt-2 text-sm text-white/70">{latestLog?.remarks || "No latest remarks"}</p>
+                      <p className="text-lg font-black text-emerald-800">{getTreeLabel(tree)}</p>
+                      <p className="mt-1 text-sm text-slate-600">Logs: {logCount}</p>
+                      <p className="mt-2 text-sm text-slate-600">{latestLog?.remarks || "No latest remarks"}</p>
                     </div>
                     <span className={`rounded-full border px-3 py-1 text-xs font-black ${statusClass(latestLog?.health_status || tree.status)}`}>
                       {latestLog?.health_status || tree.status || "NO LOG"}
                     </span>
                   </div>
-                  <p className="mt-3 text-xs font-bold text-white/50">Latest: {formatDate(latestLog?.created_at)}</p>
+                  <p className="mt-3 text-xs font-bold text-slate-500">Latest: {formatDate(latestLog?.created_at)}</p>
                 </div>
               ))
             )}
           </div>
         </div>
 
-        <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
+        <div className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
           <h2 className="text-3xl font-black">Recent Notifications</h2>
 
           <div className="mt-6 space-y-3">
             {notifications.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-black/25 p-6 text-sm font-bold text-white/60">No notifications.</div>
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm font-bold text-slate-500">No notifications.</div>
             ) : (
               notifications.slice(0, 12).map((notification) => (
-                <div key={notification.id} className="rounded-2xl border border-white/10 bg-black/25 p-5">
-                  <p className="text-lg font-black text-green-200">{notification.title || "Notification"}</p>
-                  <p className="mt-2 text-sm text-white/70">{notification.message || "-"}</p>
-                  <p className="mt-3 text-xs font-bold text-white/50">{formatDate(notification.created_at)}</p>
+                <div key={notification.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                  <p className="text-lg font-black text-emerald-800">{notification.title || "Notification"}</p>
+                  <p className="mt-2 text-sm text-slate-600">{notification.message || "-"}</p>
+                  <p className="mt-3 text-xs font-bold text-slate-500">{formatDate(notification.created_at)}</p>
                 </div>
               ))
             )}
@@ -169,9 +169,9 @@ export default function FarmerReportsPage() {
 
 function Metric({ title, value }: { title: string; value: string }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-5 shadow-2xl">
-      <p className="text-xs font-black uppercase tracking-wide text-green-100/60">{title}</p>
-      <p className="mt-3 truncate text-xl font-black text-green-300">{value}</p>
+    <div className="rounded-[1.5rem] border border-emerald-100 bg-white p-5 shadow-sm">
+      <p className="text-xs font-black uppercase tracking-wide text-emerald-700">{title}</p>
+      <p className="mt-3 truncate text-xl font-black text-emerald-700">{value}</p>
     </div>
   );
 }

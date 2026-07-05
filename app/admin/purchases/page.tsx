@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
 import { formatAgCode, formatDate, getNextAgNumbers, getProfile, peso, statusClass, type AnyRow } from "@/app/lib/admin/ag-codes";
+import { buildRevenueAllocationRows } from "@/app/lib/finance/fee-distribution";
 
 function firstValue(row: AnyRow | null, keys: string[]) {
   if (!row) return "";
@@ -142,6 +143,31 @@ export default function AdminPurchasesPage() {
       return;
     }
 
+    const profile = getProfile(purchase.profile_id, profiles);
+    const revenueAllocationRows = buildRevenueAllocationRows({
+      sourceType: "SEEDLING_PURCHASE_APPROVAL",
+      sourceId: purchase.id,
+      paymentReference: purchase.payment_reference || purchase.id,
+      profileId: purchase.profile_id,
+      customerName: profile?.full_name,
+      customerEmail: profile?.email,
+      grossAmount: Number(purchase.amount || 0),
+      earnedDate: purchase.approved_at || purchase.created_at,
+    });
+
+    const { error: allocationError } = await supabase
+      .from("revenue_allocations")
+      .upsert(revenueAllocationRows, {
+        onConflict: "source_type,source_id,beneficiary_key",
+        ignoreDuplicates: true,
+      });
+
+    if (allocationError) {
+      setMessage(`Purchase approved, but finance allocation failed: ${allocationError.message}`);
+      setBusyId("");
+      return;
+    }
+
     await supabase.from("notifications").insert({
       profile_id: purchase.profile_id,
       title: "Seedling purchase approved",
@@ -149,7 +175,7 @@ export default function AdminPurchasesPage() {
       is_read: false,
     });
 
-    setMessage(`Approved. Generated ${missingCount} new AG tree code(s).`);
+    setMessage(`Approved. Generated ${missingCount} new AG tree code(s) and recorded automatic allocation ledger.`);
     await loadData();
     setBusyId("");
   }

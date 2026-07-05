@@ -113,21 +113,21 @@ export default function FarmerProfilePage() {
   const completedAssignments = assignments.filter((a) => ["COMPLETED", "DONE"].includes(String(a.status || "").toUpperCase()));
 
   return (
-    <main className="min-h-screen bg-[#04140d] text-white">
-      <section className="border-b border-white/10 px-6 py-8 md:px-10">
+    <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
+      <section className="border-b border-emerald-100 bg-white px-4 py-6 shadow-sm sm:px-6 md:px-10">
         <div className="mx-auto max-w-7xl">
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.35em] text-green-300">SUR ALOESWOOD FARMER</p>
+              <p className="text-xs font-black uppercase tracking-[0.35em] text-emerald-700">SUR ALOESWOOD FARMER</p>
               <h1 className="mt-4 text-4xl font-black md:text-6xl">Farmer Profile</h1>
             </div>
             <div className="flex flex-wrap gap-3">
-              <Link href="/farmer/dashboard" className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-sm font-black">Dashboard</Link>
-              <Link href="/farmer/reports" className="rounded-2xl bg-green-500 px-5 py-3 text-sm font-black text-green-950">Reports</Link>
+              <Link href="/farmer/dashboard" className="rounded-2xl border border-emerald-100 bg-white px-5 py-3 text-sm font-black text-emerald-900 hover:bg-emerald-50">Dashboard</Link>
+              <Link href="/farmer/reports" className="rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-black text-white hover:bg-emerald-700">Reports</Link>
             </div>
           </div>
 
-          {message && <div className="mt-4 rounded-2xl border border-yellow-300/30 bg-yellow-400/15 px-5 py-4 text-sm font-bold text-yellow-100">{message}</div>}
+          {message && <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-900">{message}</div>}
         </div>
       </section>
 
@@ -138,11 +138,11 @@ export default function FarmerProfilePage() {
       </section>
 
       <section className="mx-auto grid max-w-7xl gap-6 px-6 pb-16 md:px-10 lg:grid-cols-[0.8fr_1.2fr]">
-        <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
+        <div className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
           <h2 className="text-3xl font-black">Profile Details</h2>
 
           {!gardener ? (
-            <div className="mt-6 rounded-2xl border border-dashed border-white/10 bg-black/25 p-6 text-sm font-bold text-white/60">Load farmer profile.</div>
+            <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm font-bold text-slate-500">Load farmer profile.</div>
           ) : (
             <div className="mt-6 grid gap-3">
               <Info label="ID" value={gardener.id} />
@@ -153,29 +153,29 @@ export default function FarmerProfilePage() {
           )}
         </div>
 
-        <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
+        <div className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
           <h2 className="text-3xl font-black">Edit Profile</h2>
 
           <div className="mt-6 grid gap-4">
-            <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name" className="w-full rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            <input value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Mobile" className="w-full rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none">
+            <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name" className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
+            <input value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Mobile" className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400">
               <option>ACTIVE</option>
               <option>PENDING</option>
               <option>SUSPENDED</option>
               <option>INACTIVE</option>
             </select>
-            <button onClick={saveProfile} disabled={loading || !gardener} className="w-full rounded-2xl bg-green-500 px-6 py-4 text-sm font-black text-green-950 disabled:bg-slate-500">Save Profile</button>
+            <button onClick={saveProfile} disabled={loading || !gardener} className="w-full rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500">Save Profile</button>
           </div>
 
-          <div className="mt-6 rounded-2xl border border-white/10 bg-black/25 p-5">
+          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
             <h3 className="text-xl font-black">Assignment Snapshot</h3>
             <div className="mt-4 space-y-2">
               {assignments.length === 0 ? (
-                <p className="text-sm font-bold text-white/60">No assignments.</p>
+                <p className="text-sm font-bold text-slate-600">No assignments.</p>
               ) : assignments.slice(0, 8).map((assignment) => (
-                <div key={assignment.id} className="flex items-center justify-between gap-3 rounded-xl bg-white/5 p-3">
-                  <span className="text-sm font-bold text-white/70">{assignment.tree_id}</span>
+                <div key={assignment.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3">
+                  <span className="text-sm font-bold text-slate-600">{assignment.tree_id}</span>
                   <span className={`rounded-full border px-3 py-1 text-xs font-black ${statusClass(assignment.status)}`}>{assignment.status || "ASSIGNED"}</span>
                 </div>
               ))}
@@ -189,18 +189,18 @@ export default function FarmerProfilePage() {
 
 function Metric({ title, value }: { title: string; value: string }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-5 shadow-2xl">
-      <p className="text-xs font-black uppercase tracking-wide text-green-100/60">{title}</p>
-      <p className="mt-3 truncate text-xl font-black text-green-300">{value}</p>
+    <div className="rounded-[1.5rem] border border-emerald-100 bg-white p-5 shadow-sm">
+      <p className="text-xs font-black uppercase tracking-wide text-emerald-700">{title}</p>
+      <p className="mt-3 truncate text-xl font-black text-emerald-700">{value}</p>
     </div>
   );
 }
 
 function Info({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-black/25 p-4">
-      <p className="text-xs font-bold uppercase tracking-wide text-white/45">{label}</p>
-      <p className="mt-2 text-sm font-black text-white">{value}</p>
+    <div className="rounded-2xl bg-slate-50 p-4">
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-2 text-sm font-black text-slate-950">{value}</p>
     </div>
   );
 }

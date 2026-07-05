@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { buildTdiPlatformFeeAllocationRows, calculatePlatformFee } from "@/app/lib/finance/fee-distribution";
 import { supabase } from "@/app/lib/supabase/client";
-import { formatDate, netAmount, peso, recoverySplit, statusClass, type AnyRow } from "@/app/lib/production/finance";
+import { formatDate, peso, recoverySplit, statusClass, type AnyRow } from "@/app/lib/production/finance";
 
 export default function AdminWithdrawalsPage() {
   const [requests, setRequests] = useState<AnyRow[]>([]);
@@ -92,6 +93,8 @@ export default function AdminWithdrawalsPage() {
 
     const newBalance = Number(wallet.balance || 0) - amount;
     const isRecovery = row.transaction_type === "RECOVERY_TERMINATION_REQUEST";
+    const feeQuote = calculatePlatformFee(amount);
+    const profile = profileFor(row.profile_id);
 
     const { error: walletError } = await supabase.from("wallets").update({ balance: newBalance, updated_at: new Date().toISOString() }).eq("id", wallet.id);
     if (walletError) {
@@ -116,23 +119,58 @@ export default function AdminWithdrawalsPage() {
         { profile_id: row.profile_id, transaction_type: "RECOVERY_TERMINATION_PLANTATION_SHARE", amount: split.plantationShare, description: `50% plantation recovery termination share from ${peso(amount)}${treeId ? ` for TREE_ID:${treeId}` : ""}`, status: "APPROVED" },
       ]);
     } else {
-      await supabase.from("wallet_transactions").insert({
-        profile_id: row.profile_id,
-        transaction_type: "WITHDRAW_APPROVED",
-        amount: netAmount(amount),
-        description: `Withdrawal approved. Gross ${peso(amount)}.`,
-        status: "APPROVED",
+      const reference = row.id;
+      await supabase.from("wallet_transactions").insert([
+        {
+          profile_id: row.profile_id,
+          transaction_type: "WITHDRAW_APPROVED",
+          amount: feeQuote.net,
+          description: `Withdrawal approved. Gross ${peso(amount)} less platform fee ${peso(feeQuote.fee)}. Net payout ${peso(feeQuote.net)}.`,
+          status: "APPROVED",
+        },
+        {
+          profile_id: row.profile_id,
+          transaction_type: "PLATFORM_FEE",
+          amount: feeQuote.fee,
+          description: `Withdrawal platform fee allocated to TDI. Gross ${peso(amount)}. Reference: ${reference}.`,
+          status: "APPROVED",
+        },
+      ]);
+
+      const revenueAllocationRows = buildTdiPlatformFeeAllocationRows({
+        sourceType: "WITHDRAWAL_PLATFORM_FEE",
+        sourceId: row.id,
+        paymentReference: reference,
+        profileId: row.profile_id,
+        customerName: profile?.full_name,
+        customerEmail: profile?.email,
+        grossAmount: amount,
+        feeAmount: feeQuote.fee,
+        earnedDate: row.created_at,
       });
+
+      const { error: allocationError } = await supabase
+        .from("revenue_allocations")
+        .upsert(revenueAllocationRows, {
+          onConflict: "source_type,source_id,beneficiary_key",
+          ignoreDuplicates: true,
+        });
+
+      if (allocationError) {
+        setMessage(`Withdrawal approved, but TDI fee allocation failed: ${allocationError.message}`);
+        setBusyId("");
+        return;
+      }
     }
 
     await supabase.from("notifications").insert({
       profile_id: row.profile_id,
       title: isRecovery ? "Recovery termination approved" : "Withdrawal approved",
-      message: isRecovery ? `Recovery termination approved for ${peso(amount)}. The selected tree has been removed from active AG tree records.` : `Withdrawal approved for ${peso(amount)}.`,
+      message: isRecovery ? `Recovery termination approved for ${peso(amount)}. The selected tree has been removed from active AG tree records.` : `Withdrawal approved. Gross ${peso(amount)}, platform fee ${peso(feeQuote.fee)}, net payout ${peso(feeQuote.net)}.`,
       is_read: false,
     });
 
-    setMessage(isRecovery ? "Recovery approved, wallet deducted, and selected tree terminated." : "Request approved and wallet deducted.");
+    setMessage(isRecovery ? "Recovery approved, wallet deducted, and selected tree terminated." : "Request approved, wallet deducted, net payout recorded, and TDI platform fee ledgered.");
     await loadData();
     setBusyId("");
   }
@@ -173,6 +211,7 @@ export default function AdminWithdrawalsPage() {
   const selectedWallet = selected ? walletFor(selected.profile_id) : null;
   const selectedIsRecovery = selected?.transaction_type === "RECOVERY_TERMINATION_REQUEST";
   const selectedSplit = recoverySplit(Number(selected?.amount || 0));
+  const selectedFeeQuote = calculatePlatformFee(Number(selected?.amount || 0));
   const selectedTerminatedTree = terminatedTrees.find((tree) => tree.id === selectedTerminatedTreeId) || terminatedTrees[0] || null;
   const selectedTerminatedProfile = selectedTerminatedTree ? profileFor(selectedTerminatedTree.profile_id) : null;
   const selectedTerminatedRecovery = selectedTerminatedTree
@@ -281,10 +320,11 @@ export default function AdminWithdrawalsPage() {
                 <div className="mt-5 grid gap-3 md:grid-cols-2">
                   <Info label="Co-Planter" value={selectedProfile?.full_name || selectedProfile?.email || "Unknown"} />
                   <Info label="Email" value={selectedProfile?.email || "-"} />
-                  <Info label="Amount" value={peso(selected.amount)} />
+                  <Info label={selectedIsRecovery ? "Recovery Amount" : "Gross Withdrawal"} value={peso(selected.amount)} />
                   <Info label="Wallet Balance" value={peso(selectedWallet?.balance)} />
                   <Info label="Created" value={formatDate(selected.created_at)} />
-                  <Info label="Net / Split" value={selectedIsRecovery ? `50/50: ${peso(selectedSplit.coPlanterShare)} / ${peso(selectedSplit.plantationShare)}` : peso(netAmount(Number(selected.amount || 0)))} />
+                  <Info label={selectedIsRecovery ? "50/50 Split" : "Net Payout"} value={selectedIsRecovery ? `50/50: ${peso(selectedSplit.coPlanterShare)} / ${peso(selectedSplit.plantationShare)}` : peso(selectedFeeQuote.net)} />
+                  {!selectedIsRecovery && <Info label="TDI Platform Fee" value={peso(selectedFeeQuote.fee)} />}
                 </div>
 
                 {selectedIsRecovery && (

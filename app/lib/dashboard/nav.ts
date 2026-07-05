@@ -22,18 +22,18 @@ export const statusClass = (status?: string | null) => {
   const value = String(status || "").toUpperCase();
 
   if (["ACTIVE", "APPROVED", "PAID", "COMPLETED", "REGISTERED", "OPEN", "READ"].includes(value)) {
-    return "border-green-300/30 bg-green-400/15 text-green-100";
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
   }
 
   if (["PENDING", "PROCESSING", "FOR_REVIEW", "ASSIGNED", "UNREAD", "MAINTENANCE"].includes(value)) {
-    return "border-yellow-300/30 bg-yellow-400/15 text-yellow-100";
+    return "border-amber-200 bg-amber-50 text-amber-800";
   }
 
   if (["REJECTED", "FAILED", "CANCELLED", "SUSPENDED", "DAMAGED", "CLOSED"].includes(value)) {
-    return "border-red-300/30 bg-red-400/15 text-red-100";
+    return "border-red-200 bg-red-50 text-red-800";
   }
 
-  return "border-white/10 bg-white/10 text-white/75";
+  return "border-slate-200 bg-slate-50 text-slate-700";
 };
 
 export function byDateDesc(a: AnyRow, b: AnyRow) {
@@ -44,7 +44,9 @@ export const adminLinks = [
   { href: "/admin/coplanters", title: "Co-Planters", desc: "Approve accounts and KYC" },
   { href: "/admin/purchases", title: "Seedling Purchases", desc: "Approve payments and generate AG codes" },
   { href: "/admin/tree-registry", title: "Tree Registry", desc: "DENR tags, GPS, planting details" },
+  { href: "/admin/tree-maintenance", title: "Tree Maintenance", desc: "Assign caretakers and optional care plans per tree" },
   { href: "/admin/treasury", title: "Treasury", desc: "Cash-in approvals and wallet crediting" },
+  { href: "/admin/finance-distribution", title: "Finance Distribution", desc: "Daily allocation ledger and monthly payout settlement" },
   { href: "/admin/gardener", title: "Gardeners", desc: "Farmer and gardener management" },
   { href: "/admin/support", title: "Support", desc: "Customer tickets and replies" },
   { href: "/admin/notifications", title: "Notifications", desc: "System messages and read status" },
@@ -77,11 +79,11 @@ export const investorLinks = [
 ];
 
 export const farmerLinks = [
-  { href: "/farmer/assigned-trees", title: "Assigned Trees", desc: "Trees assigned for care" },
-  { href: "/farmer/dashboard/task", title: "Tasks", desc: "Start and finish field tasks" },
-  { href: "/farmer/growth-logs", title: "Growth Logs", desc: "Upload growth measurements" },
-  { href: "/farmer/photo-updates", title: "Photo Updates", desc: "Upload latest tree photos" },
-  { href: "/farmer/gps", title: "GPS Updates", desc: "Update tree location" },
-  { href: "/farmer/reports", title: "Reports", desc: "Field reports and concerns" },
+  { href: "/farmer/dashboard/task", title: "Task Queue", desc: "See paid service requests assigned by admin" },
+  { href: "/farmer/assigned-trees", title: "Assigned Trees", desc: "Inspect the AG trees connected to your tasks" },
+  { href: "/farmer/photo-updates", title: "Submit Photos", desc: "Send customer-visible photo documentation" },
+  { href: "/farmer/growth-logs", title: "Growth Logs", desc: "Submit health, height, diameter, and field notes" },
+  { href: "/farmer/gps", title: "GPS Updates", desc: "Update farm block or location reference" },
+  { href: "/farmer/reports", title: "Reports", desc: "Review submitted work and customer notifications" },
   { href: "/farmer/profile", title: "Profile", desc: "Farmer account information" },
 ];

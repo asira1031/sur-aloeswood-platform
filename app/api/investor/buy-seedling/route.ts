@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { COPLANTER_PACKAGE_PRICE } from "@/app/lib/business/rules";
+import { buildRevenueAllocationRows, calculateDistribution } from "@/app/lib/finance/fee-distribution";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -125,19 +126,57 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: purchaseError.message }, { status: 500 });
   }
 
-  const { error: txError } = await admin.from("wallet_transactions").insert({
-    profile_id: buyer.id,
-    transaction_type: "SEEDLING_PURCHASE",
-    amount: price,
-    description: `Aquilaria Malaccensis seedling paid from wallet. Reference: ${reference}. Waiting for admin AG tree approval.`,
-    status: "PAID",
-  });
+  const distribution = calculateDistribution("COPLANTER_PACKAGE", price);
+  const transactionRows = [
+    {
+      profile_id: buyer.id,
+      transaction_type: "SEEDLING_PURCHASE",
+      amount: price,
+      description: `Aquilaria Malaccensis seedling paid from wallet. Reference: ${reference}. Waiting for admin AG tree approval.`,
+      status: "PAID",
+    },
+    ...distribution.shares.map((share) => ({
+      profile_id: buyer.id,
+      transaction_type: "PACKAGE_DISTRIBUTION_LEDGER",
+      amount: share.amount,
+      description: `${distribution.rule.label} wallet payment share ${share.percent}% for ${share.recipient}. Settle to ${share.accountProvider} - ${share.accountName} - ${share.accountNumber}. Reference: ${reference}.`,
+      status: "LEDGERED",
+    })),
+  ];
+
+  const { error: txError } = await admin.from("wallet_transactions").insert(transactionRows);
 
   if (txError) {
     await admin.from("wallets").update({ balance: currentBalance, updated_at: new Date().toISOString() }).eq("id", wallet.id);
     await admin.from("profiles").update({ wallet_balance: currentBalance }).eq("id", buyer.id);
     await admin.from("seedling_purchases").delete().eq("id", purchase.id);
     return NextResponse.json({ error: txError.message }, { status: 500 });
+  }
+
+  const revenueAllocationRows = buildRevenueAllocationRows({
+    sourceType: "WALLET_SEEDLING_PURCHASE",
+    sourceId: purchase.id,
+    paymentReference: reference,
+    profileId: buyer.id,
+    customerName: buyer.full_name,
+    customerEmail: buyer.email,
+    grossAmount: price,
+    earnedDate: purchase.created_at,
+  });
+
+  const { error: allocationError } = await admin
+    .from("revenue_allocations")
+    .upsert(revenueAllocationRows, {
+      onConflict: "source_type,source_id,beneficiary_key",
+      ignoreDuplicates: true,
+    });
+
+  if (allocationError) {
+    await admin.from("wallets").update({ balance: currentBalance, updated_at: new Date().toISOString() }).eq("id", wallet.id);
+    await admin.from("profiles").update({ wallet_balance: currentBalance }).eq("id", buyer.id);
+    await admin.from("seedling_purchases").delete().eq("id", purchase.id);
+    await admin.from("wallet_transactions").delete().eq("profile_id", buyer.id).ilike("description", `%${reference}%`);
+    return NextResponse.json({ error: `Finance allocation failed: ${allocationError.message}` }, { status: 500 });
   }
 
   await admin.from("notifications").insert({

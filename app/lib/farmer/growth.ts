@@ -24,7 +24,7 @@ export const statusClass = (status?: string | null) => {
 
 export function getTreeLabel(tree: AnyRow | null | undefined) {
   if (!tree) return "-";
-  return pick(tree, ["tree_id", "qr_code", "id"]);
+  return pick(tree, ["tree_code", "denr_tag_number", "tree_id", "qr_code", "id"]);
 }
 
 export function getTreeByAssignment(assignment: AnyRow, trees: AnyRow[]) {

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
 import { formatDate, getProfile, peso, profileName, statusClass, type AnyRow } from "@/app/lib/admin/approvals";
-import { calculateDistribution } from "@/app/lib/finance/fee-distribution";
+import { buildRevenueAllocationRows, buildTdiPlatformFeeAllocationRows, calculatePlatformFee } from "@/app/lib/finance/fee-distribution";
 
 export default function AdminTreasuryPage() {
   const [profiles, setProfiles] = useState<AnyRow[]>([]);
@@ -85,7 +85,8 @@ export default function AdminTreasuryPage() {
       return;
     }
 
-    const newBalance = Number(wallet?.balance || 0) + amount;
+    const feeQuote = calculatePlatformFee(amount);
+    const newBalance = Number(wallet?.balance || 0) + feeQuote.net;
     const { error: walletError } = await supabase
       .from("wallets")
       .update({ balance: newBalance, updated_at: new Date().toISOString() })
@@ -99,29 +100,66 @@ export default function AdminTreasuryPage() {
 
     await supabase.from("profiles").update({ wallet_balance: newBalance }).eq("id", row.profile_id);
 
-    const distribution = calculateDistribution("COPLANTER_PACKAGE", amount);
     const reference = row.reference_no || row.id;
+    const profile = getProfile(row.profile_id, profiles);
     const ledgerRows = [
       {
         profile_id: row.profile_id,
         transaction_type: "CASH_IN",
-        amount,
-        description: row.description || `Cash-in approved: ${reference}. Co-planter package distribution ledger recorded for admin settlement.`,
+        amount: feeQuote.net,
+        description: `Cash-in approved: ${reference}. Gross ${peso(amount)} less platform fee ${peso(feeQuote.fee)}. Net wallet credit ${peso(feeQuote.net)}.`,
         status: "APPROVED",
       },
-      ...distribution.shares.map((share) => ({
+      {
         profile_id: row.profile_id,
-        transaction_type: "PACKAGE_DISTRIBUTION_LEDGER",
-        amount: share.amount,
-        description: `${distribution.rule.label} share ${share.percent}% for ${share.recipient}. Settle to ${share.accountProvider} - ${share.accountName} - ${share.accountNumber}. Reference: ${reference}.`,
+        transaction_type: "PLATFORM_FEE",
+        amount: feeQuote.fee,
+        description: `Cash-in platform fee allocated to TDI. Gross ${peso(amount)}. Reference: ${reference}.`,
         status: "APPROVED",
-      })),
+      },
     ];
 
     const { error: txError } = await supabase.from("wallet_transactions").insert(ledgerRows);
 
     if (txError) {
       setMessage(txError.message);
+      setBusyId("");
+      return;
+    }
+
+    const mainAllocationRows = buildRevenueAllocationRows({
+      sourceType: "WALLET_CASH_IN",
+      sourceId: row.id,
+      paymentReference: reference,
+      profileId: row.profile_id,
+      customerName: profileName(profile),
+      customerEmail: profile?.email,
+      grossAmount: amount,
+      earnedDate: row.created_at,
+    });
+
+    const platformFeeAllocationRows = buildTdiPlatformFeeAllocationRows({
+      sourceType: "CASHIN_PLATFORM_FEE",
+      sourceId: row.id,
+      paymentReference: reference,
+      profileId: row.profile_id,
+      customerName: profileName(profile),
+      customerEmail: profile?.email,
+      grossAmount: amount,
+      feeAmount: feeQuote.fee,
+      earnedDate: row.created_at,
+    });
+    const revenueAllocationRows = [...mainAllocationRows, ...platformFeeAllocationRows];
+
+    const { error: allocationError } = await supabase
+      .from("revenue_allocations")
+      .upsert(revenueAllocationRows, {
+        onConflict: "source_type,source_id,beneficiary_key",
+        ignoreDuplicates: true,
+      });
+
+    if (allocationError) {
+      setMessage(`Finance allocation failed: ${allocationError.message}`);
       setBusyId("");
       return;
     }
@@ -137,11 +175,11 @@ export default function AdminTreasuryPage() {
     await supabase.from("notifications").insert({
       profile_id: row.profile_id,
       title: "Cash-in approved",
-      message: `Your cash-in request of ${peso(amount)} was approved.`,
+      message: `Your cash-in request of ${peso(amount)} was approved. Platform fee ${peso(feeQuote.fee)} was deducted and ${peso(feeQuote.net)} was credited to your wallet.`,
       is_read: false,
     });
 
-    setMessage("Cash-in approved, wallet credited, and co-planter package distribution ledger recorded for admin settlement.");
+    setMessage("Cash-in approved, net wallet credited, 5-way automatic allocation ledger recorded, and TDI platform fee queued for monthly manual settlement.");
     await loadTreasury();
     setBusyId("");
   }
@@ -186,7 +224,7 @@ export default function AdminTreasuryPage() {
   const approvedCashinTotal = cashins.filter((row) => String(row.status || "").toUpperCase() === "APPROVED").reduce((sum, row) => sum + Number(row.amount || 0), 0);
   const selectedProfile = selected ? getProfile(selected.profile_id, profiles) : null;
   const selectedWallet = selected ? walletFor(selected.profile_id) : null;
-  const selectedDistribution = selected ? calculateDistribution("COPLANTER_PACKAGE", Number(selected.amount || 0)) : null;
+  const selectedFeeQuote = selected ? calculatePlatformFee(Number(selected.amount || 0)) : null;
 
   return (
     <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
@@ -307,27 +345,14 @@ export default function AdminTreasuryPage() {
                 </div>
 
                 <div className="mt-5 rounded-3xl border border-amber-100 bg-amber-50/80 p-4">
-                  <p className="text-sm font-black text-slate-950">Co-Planter Package Distribution</p>
+                  <p className="text-sm font-black text-slate-950">Cash-In Platform Fee</p>
                   <p className="mt-1 text-xs font-bold leading-6 text-slate-600">
-                    Approval credits the customer wallet and records the admin settlement split. Real transfers remain manual until gateway split payout is configured.
+                    Approval credits the customer's net wallet amount and records the platform fee as a TDI-only allocation ledger. Real transfers remain manual.
                   </p>
-                  <div className="mt-4 grid gap-3">
-                    {selectedDistribution?.shares.map((share) => (
-                      <div key={`${share.recipient}-${share.percent}`} className="rounded-2xl border border-amber-100 bg-white p-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-black text-slate-950">{share.recipient}</p>
-                            <p className="mt-1 text-xs font-bold text-slate-500">
-                              {share.accountProvider} - {share.accountName} - {share.accountNumber}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-sm font-black text-amber-700">{share.percent}%</p>
-                            <p className="mt-1 text-sm font-black text-slate-950">{peso(share.amount)}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    <Info label="Gross Cash-In" value={peso(selectedFeeQuote?.gross)} />
+                    <Info label="TDI Platform Fee" value={peso(selectedFeeQuote?.fee)} />
+                    <Info label="Net Wallet Credit" value={peso(selectedFeeQuote?.net)} />
                   </div>
                 </div>
 

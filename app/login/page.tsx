@@ -18,6 +18,11 @@ export default function LoginPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(false);
+  const [resetMode, setResetMode] = useState(false);
+  const [resetStep, setResetStep] = useState<"EMAIL" | "OTP">("EMAIL");
+  const [resetOtp, setResetOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
 
   const handleLogin = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
@@ -139,13 +144,11 @@ export default function LoginPage() {
       return;
     }
 
-    const redirectTo =
-      typeof window !== "undefined"
-        ? `${window.location.origin}/login`
-        : undefined;
-
-    const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-      redirectTo,
+    const { error } = await supabase.auth.signInWithOtp({
+      email: cleanEmail,
+      options: {
+        shouldCreateUser: false,
+      },
     });
 
     setResettingPassword(false);
@@ -155,7 +158,64 @@ export default function LoginPage() {
       return;
     }
 
-    setMessage("Password reset link sent. Please check your email inbox.");
+    setResetMode(true);
+    setResetStep("OTP");
+    setMessage("Password reset OTP sent. Enter the code and your new password.");
+  };
+
+  const handleResetWithOtp = async () => {
+    setMessage("");
+    const cleanEmail = email.toLowerCase().trim();
+
+    if (!cleanEmail || !resetOtp.trim()) {
+      setMessage("Enter your email and OTP.");
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setMessage("New password must be at least 8 characters.");
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setMessage("New passwords do not match.");
+      return;
+    }
+
+    setResettingPassword(true);
+
+    const { error: otpError } = await supabase.auth.verifyOtp({
+      email: cleanEmail,
+      token: resetOtp.trim(),
+      type: "email",
+    });
+
+    if (otpError) {
+      setResettingPassword(false);
+      setMessage(otpError.message || "Invalid or expired OTP.");
+      return;
+    }
+
+    const { error: updateError } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+
+    await supabase.auth.signOut();
+    clearSurSession();
+    setResettingPassword(false);
+
+    if (updateError) {
+      setMessage(updateError.message);
+      return;
+    }
+
+    setResetMode(false);
+    setResetStep("EMAIL");
+    setResetOtp("");
+    setNewPassword("");
+    setConfirmNewPassword("");
+    setPassword("");
+    setMessage("Password updated. You can login with your new password.");
   };
 
   return (
@@ -210,13 +270,13 @@ export default function LoginPage() {
 
         <div className="rounded-[2rem] border border-white/20 bg-white/95 p-8 text-slate-900 shadow-2xl backdrop-blur-xl">
           <h3 className="text-3xl font-black text-blue-950">
-            Login to Platform
+            {resetMode ? "Reset Password" : "Login to Platform"}
           </h3>
           <p className="mt-2 text-slate-500">
-            Use one secure login for Admin, Co-Planter, and Farmer access.
+            {resetMode ? "Use your email OTP to set a new password." : "Use one secure login for Admin, Co-Planter, and Farmer access."}
           </p>
 
-          <form className="mt-8 space-y-5" onSubmit={handleLogin}>
+          <form className="mt-8 space-y-5" onSubmit={resetMode ? (event) => event.preventDefault() : handleLogin}>
             <div>
               <label className="text-sm font-bold text-slate-700">Email</label>
               <input
@@ -229,19 +289,63 @@ export default function LoginPage() {
               />
             </div>
 
-            <div>
-              <label className="text-sm font-bold text-slate-700">
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                autoComplete="current-password"
-                className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
-              />
-            </div>
+            {!resetMode ? (
+              <div>
+                <label className="text-sm font-bold text-slate-700">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+                />
+              </div>
+            ) : resetStep === "OTP" ? (
+              <>
+                <div>
+                  <label className="text-sm font-bold text-slate-700">Email OTP</label>
+                  <input
+                    value={resetOtp}
+                    onChange={(e) => setResetOtp(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                    placeholder="Enter OTP code"
+                    inputMode="numeric"
+                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-center text-xl font-black tracking-[0.35em] outline-none focus:border-green-600"
+                  />
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="text-sm font-bold text-slate-700">New Password</label>
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Minimum 8 characters"
+                      autoComplete="new-password"
+                      className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-bold text-slate-700">Confirm New Password</label>
+                    <input
+                      type="password"
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      placeholder="Repeat new password"
+                      autoComplete="new-password"
+                      className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="rounded-2xl border border-green-100 bg-green-50 px-5 py-4 text-sm font-bold leading-6 text-green-900">
+                Enter your registered email, then send an OTP to reset your password.
+              </div>
+            )}
 
             {message && (
               <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
@@ -249,13 +353,24 @@ export default function LoginPage() {
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-2xl bg-green-600 px-6 py-4 text-lg font-black text-white shadow-xl hover:bg-green-700 disabled:bg-slate-400"
-            >
-              {loading ? "Signing In..." : "Login to Dashboard"}
-            </button>
+            {!resetMode ? (
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-2xl bg-green-600 px-6 py-4 text-lg font-black text-white shadow-xl hover:bg-green-700 disabled:bg-slate-400"
+              >
+                {loading ? "Signing In..." : "Login to Dashboard"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={resetStep === "EMAIL" ? handleForgotPassword : handleResetWithOtp}
+                disabled={resettingPassword}
+                className="w-full rounded-2xl bg-green-600 px-6 py-4 text-lg font-black text-white shadow-xl hover:bg-green-700 disabled:bg-slate-400"
+              >
+                {resettingPassword ? "Processing..." : resetStep === "EMAIL" ? "Send Password OTP" : "Verify OTP & Save Password"}
+              </button>
+            )}
           </form>
 
           <div className="mt-6 flex items-center justify-between text-sm font-semibold">
@@ -264,11 +379,15 @@ export default function LoginPage() {
             </Link>
             <button
               type="button"
-              onClick={handleForgotPassword}
+              onClick={() => {
+                setResetMode((current) => !current);
+                setResetStep("EMAIL");
+                setMessage("");
+              }}
               disabled={resettingPassword}
               className="text-slate-500 hover:underline disabled:opacity-60"
             >
-              {resettingPassword ? "Sending..." : "Forgot password?"}
+              {resetMode ? "Back to login" : "Forgot password?"}
             </button>
           </div>
         </div>

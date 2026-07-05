@@ -169,6 +169,24 @@ export default function FarmerDashboardPage() {
           <Metric tone="mist" title="Completed" value={String(completed)} detail="Finished assignments" />
         </section>
 
+        <section className="mb-5 rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.24em] text-emerald-700">Caretaker Flow</p>
+              <h2 className="mt-2 text-2xl font-black text-slate-950">From admin assignment to customer update</h2>
+            </div>
+            <Link href="/farmer/dashboard/task" className="rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-black text-white hover:bg-emerald-700">
+              Open Task Queue
+            </Link>
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-4">
+            <FlowStep label="1" title="Receive Task" detail="Admin assigns a paid care request to you." />
+            <FlowStep label="2" title="Start Work" detail="Open Task Queue and update the task status." />
+            <FlowStep label="3" title="Submit Proof" detail="Upload photo, growth log, GPS, or field note." />
+            <FlowStep label="4" title="Customer Sees It" detail="The co-planter receives the update in their app." />
+          </div>
+        </section>
+
         <section className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
           <div>
             <h2 className="text-2xl font-black text-slate-950">Farmer Tools</h2>
@@ -274,6 +292,16 @@ function Empty({ text }: { text: string }) {
   return (
     <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm font-bold text-slate-500">
       {text}
+    </div>
+  );
+}
+
+function FlowStep({ label, title, detail }: { label: string; title: string; detail: string }) {
+  return (
+    <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+      <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-sm font-black text-white">{label}</span>
+      <p className="mt-3 text-sm font-black text-slate-950">{title}</p>
+      <p className="mt-1 text-xs font-bold leading-5 text-slate-600">{detail}</p>
     </div>
   );
 }

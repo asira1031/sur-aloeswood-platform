@@ -44,10 +44,9 @@ export async function getAuthenticatedProfile(): Promise<SurProfile | null> {
   const { data: authData, error: authError } = await supabase.auth.getUser();
 
   if (authError || !authData.user?.email) {
-    clearSurSession();
-    return null;
-  }
-
+  clearSurSession();
+  return null;
+}
   const email = authData.user.email.toLowerCase().trim();
 
   const { data: profileByAuthUserId } = await supabase

@@ -14,19 +14,19 @@ export const formatDate = (value?: string | null) => {
 export const statusClass = (status?: string | null) => {
   const value = String(status || "").toUpperCase();
 
-  if (["ACTIVE", "APPROVED", "OPEN", "ENABLED", "READ"].includes(value)) {
-    return "border-green-300/30 bg-green-400/15 text-green-100";
+  if (["ACTIVE", "APPROVED", "OPEN", "ENABLED", "READ", "RESOLVED"].includes(value)) {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
   }
 
-  if (["PENDING", "PROCESSING", "UNREAD", "FOR_REVIEW"].includes(value)) {
-    return "border-yellow-300/30 bg-yellow-400/15 text-yellow-100";
+  if (["PENDING", "PROCESSING", "UNREAD", "FOR_REVIEW", "ADMIN_QUEUE", "AI_ASSISTING"].includes(value)) {
+    return "border-amber-200 bg-amber-50 text-amber-800";
   }
 
   if (["SUSPENDED", "REJECTED", "CLOSED", "DISABLED"].includes(value)) {
-    return "border-red-300/30 bg-red-400/15 text-red-100";
+    return "border-red-200 bg-red-50 text-red-800";
   }
 
-  return "border-white/10 bg-white/10 text-white/75";
+  return "border-slate-200 bg-slate-50 text-slate-700";
 };
 
 export const settingOptions = {
