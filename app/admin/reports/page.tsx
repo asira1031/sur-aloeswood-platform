@@ -39,7 +39,7 @@ export default function AdminReportsPage() {
       supabase.from("profiles").select("*").limit(1000),
       supabase.from("wallets").select("*").limit(1000),
       supabase.from("wallet_transactions").select("*").order("created_at", { ascending: false }).limit(1000),
-      supabase.from("trees").select("*").order("created_at", { ascending: false }).limit(1000),
+      supabase.from("tree_registry").select("*").order("created_at", { ascending: false }).limit(1000),
       supabase.from("seedling_purchases").select("*").order("created_at", { ascending: false }).limit(1000),
       supabase.from("farms").select("*").limit(1000),
       supabase.from("tree_growth_logs").select("*").order("created_at", { ascending: false }).limit(1000),

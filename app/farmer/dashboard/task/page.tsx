@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
+import { getAuthenticatedProfile } from "@/app/lib/auth/session";
 import {
   formatDate,
   getAssignmentTree,
@@ -14,6 +15,11 @@ import {
 import { taskActionLabel, nextTaskStatus, taskStatus } from "@/app/lib/farmer/tasks";
 
 const CARETAKER_UPLOAD_BUCKET = "caretaker-updates";
+
+function requiresPhotoEvidence(task: AnyRow | null) {
+  const label = String(pick(task || {}, ["task_type", "assignment_type", "title"], "")).toUpperCase();
+  return label.includes("PHOTO");
+}
 
 export default function FarmerTaskPage() {
   const [email, setEmail] = useState("");
@@ -31,9 +37,22 @@ export default function FarmerTaskPage() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    const saved = localStorage.getItem("sur_login_email") || "";
-    setEmail(saved);
-    if (saved) loadTasks(saved);
+    let mounted = true;
+
+    async function boot() {
+      const saved = localStorage.getItem("sur_login_email") || "";
+      const profile = saved ? null : await getAuthenticatedProfile();
+      const targetEmail = saved || profile?.email || "";
+      if (!mounted) return;
+      setEmail(targetEmail);
+      if (targetEmail) loadTasks(targetEmail);
+    }
+
+    boot();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   async function loadTasks(targetEmail = email) {
@@ -45,19 +64,19 @@ export default function FarmerTaskPage() {
     const { data: gardenerRow } = await supabase
       .from("gardeners")
       .select("*")
-      .or(`email.eq.${cleanEmail},farmer_email.eq.${cleanEmail},gardener_email.eq.${cleanEmail}`)
+      .eq("email", cleanEmail)
       .maybeSingle();
 
-    const farmerId = gardenerRow?.id || gardenerRow?.profile_id || gardenerRow?.farmer_profile_id || gardenerRow?.gardener_profile_id;
+    const farmerId = gardenerRow?.id;
 
     const [{ data: assignmentRows, error: assignmentError }, { data: treeRows }] = await Promise.all([
       farmerId
         ? supabase
             .from("gardener_assignments")
             .select("*")
-            .or(`gardener_id.eq.${farmerId},farmer_id.eq.${farmerId},gardener_profile_id.eq.${farmerId},farmer_profile_id.eq.${farmerId}`)
+            .eq("gardener_id", farmerId)
             .order("assigned_at", { ascending: false })
-        : supabase.from("gardener_assignments").select("*").order("assigned_at", { ascending: false }).limit(200),
+        : supabase.from("gardener_assignments").select("*").eq("gardener_id", "00000000-0000-0000-0000-000000000000").limit(0),
       supabase.from("tree_registry").select("id, profile_id, purchase_id, tree_code, denr_tag_number, species, status, gps_lat, gps_lng, farm_id, farm_location_note, planted_at, created_at").order("created_at", { ascending: false }).limit(1000),
     ]);
 
@@ -85,6 +104,33 @@ export default function FarmerTaskPage() {
 
     const next = nextTaskStatus(row.status);
     const tree = getAssignmentTree(row, trees);
+
+    if (next === "COMPLETED" && requiresPhotoEvidence(row)) {
+      const treeId = row.tree_id || tree?.id || "";
+      const treeCode = row.tree_code || tree?.tree_code || "";
+      let photoCheckQuery = supabase
+        .from("tree_growth_logs")
+        .select("id, photo_url")
+        .eq("gardener_id", farmer?.id || farmer?.profile_id || "")
+        .not("photo_url", "is", null)
+        .limit(1);
+
+      photoCheckQuery = treeId ? photoCheckQuery.eq("tree_id", treeId) : photoCheckQuery.eq("tree_code", treeCode);
+
+      const { data: photoLogs, error: photoCheckError } = await photoCheckQuery;
+
+      if (photoCheckError) {
+        setMessage(photoCheckError.message);
+        setBusyId("");
+        return;
+      }
+
+      if (!photoLogs?.length) {
+        setMessage("Submit the required photo proof first before completing this Photo Documentation task.");
+        setBusyId("");
+        return;
+      }
+    }
 
     const { error } = await supabase
       .from("gardener_assignments")
@@ -130,6 +176,12 @@ export default function FarmerTaskPage() {
     }
 
     const tree = getAssignmentTree(selected, trees);
+    const photoRequired = requiresPhotoEvidence(selected);
+
+    if (photoRequired && !photoFile) {
+      setMessage("This photo documentation task requires a camera/photo proof before submission.");
+      return;
+    }
 
     setLoading(true);
     setMessage("");
@@ -170,10 +222,31 @@ export default function FarmerTaskPage() {
       await supabase
         .from("maintenance_orders")
         .update({
-          work_status: "FIELD_UPDATE_SUBMITTED",
+          work_status: photoRequired ? "PHOTO_SUBMITTED" : "FIELD_UPDATE_SUBMITTED",
           updated_at: new Date().toISOString(),
         })
         .eq("id", selected.maintenance_order_id);
+    }
+
+    if (photoRequired) {
+      await supabase
+        .from("gardener_assignments")
+        .update({
+          status: "COMPLETED",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", selected.id);
+
+      if (selected.maintenance_order_id) {
+        await supabase
+          .from("maintenance_orders")
+          .update({
+            work_status: "COMPLETED",
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", selected.maintenance_order_id);
+      }
     }
 
     await supabase.from("notifications").insert({
@@ -188,8 +261,9 @@ export default function FarmerTaskPage() {
     setDiameter("");
     setHealth("HEALTHY");
     setPhotoFile(null);
-    setMessage(photoUrl ? "Field report and photo submitted." : "Field report submitted.");
+    setMessage(photoRequired ? "Photo proof submitted and task completed." : photoUrl ? "Field report and photo submitted." : "Field report submitted.");
     setLoading(false);
+    await loadTasks(email);
   }
 
   async function uploadCaretakerPhoto(assignment: AnyRow, tree: AnyRow | null, file: File) {
@@ -303,6 +377,11 @@ export default function FarmerTaskPage() {
           <div className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
             <h2 className="text-3xl font-black">Submit Field Report</h2>
             <p className="mt-2 text-sm font-bold text-slate-600">Use your phone camera or upload an existing photo, then submit notes for admin and co-planter review.</p>
+            {selected && requiresPhotoEvidence(selected) && (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-black text-amber-900">
+                Photo proof is required for this selected task.
+              </div>
+            )}
 
             <div className="mt-6 grid gap-4 md:grid-cols-2">
               <input value={height} onChange={(e) => setHeight(e.target.value)} placeholder="Height cm" type="number" className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
@@ -316,7 +395,9 @@ export default function FarmerTaskPage() {
               </select>
               <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Field notes..." rows={4} className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400 md:col-span-2" />
               <label className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/60 p-5 md:col-span-2">
-                <span className="block text-sm font-black text-slate-950">Field photo / camera proof</span>
+                <span className="block text-sm font-black text-slate-950">
+                  Field photo / camera proof {selected && requiresPhotoEvidence(selected) ? "(required)" : "(optional)"}
+                </span>
                 <span className="mt-1 block text-xs font-bold text-slate-500">On mobile, this can open the camera. On desktop, choose an image file.</span>
                 <input
                   type="file"

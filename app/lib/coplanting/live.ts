@@ -38,12 +38,24 @@ export const statusClass = (status?: string | null) => {
   return "border-white/10 bg-white/10 text-white/75";
 };
 
-export function latestLogForTree(treeId: string, logs: AnyRow[]) {
-  return logs.find((log) => log.tree_id === treeId) || null;
+export function logBelongsToTree(tree: AnyRow, log: AnyRow) {
+  const treeId = String(tree?.id || "");
+  const treeCode = String(tree?.tree_code || "").toUpperCase();
+  const logTreeId = String(log?.tree_id || "");
+  const logTreeCode = String(log?.tree_code || "").toUpperCase();
+
+  return Boolean(
+    (treeId && logTreeId === treeId) ||
+      (treeCode && logTreeCode === treeCode)
+  );
 }
 
-export function logsForTree(treeId: string, logs: AnyRow[]) {
-  return logs.filter((log) => log.tree_id === treeId);
+export function latestLogForTree(tree: AnyRow, logs: AnyRow[]) {
+  return logs.find((log) => logBelongsToTree(tree, log)) || null;
+}
+
+export function logsForTree(tree: AnyRow, logs: AnyRow[]) {
+  return logs.filter((log) => logBelongsToTree(tree, log));
 }
 
 export function treeDisplayCode(tree: AnyRow) {

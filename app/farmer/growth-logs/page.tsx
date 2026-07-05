@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
+import { getAuthenticatedProfile } from "@/app/lib/auth/session";
 import { formatDate, getLogsForTree, getTreeLabel, pick, statusClass, type AnyRow } from "@/app/lib/farmer/growth";
 
 export default function FarmerGrowthLogsPage() {
@@ -16,14 +17,27 @@ export default function FarmerGrowthLogsPage() {
   const [diameter, setDiameter] = useState("");
   const [health, setHealth] = useState("HEALTHY");
   const [remarks, setRemarks] = useState("");
-  const [photoUrl, setPhotoUrl] = useState("");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem("sur_login_email") || "";
-    setEmail(saved);
-    if (saved) loadData(saved);
+    let mounted = true;
+
+    async function boot() {
+      const saved = localStorage.getItem("sur_login_email") || "";
+      const profile = saved ? null : await getAuthenticatedProfile();
+      const targetEmail = saved || profile?.email || "";
+      if (!mounted) return;
+      setEmail(targetEmail);
+      if (targetEmail) loadData(targetEmail);
+    }
+
+    boot();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   async function loadData(targetEmail = email) {
@@ -93,6 +107,33 @@ export default function FarmerGrowthLogsPage() {
     setLoading(true);
     setMessage("");
     const treeForSubmit = trees.find((tree) => tree.id === selectedTreeId) || null;
+    let uploadedPhotoUrl: string | null = null;
+
+    if (photoFile) {
+      const fileExt = photoFile.name.split(".").pop() || "jpg";
+      const filePath = `growth/${gardener?.id || "farmer"}-${selectedTreeId}-${Date.now()}.${fileExt}`;
+      const { error: uploadError } = await supabase.storage
+        .from("caretaker-updates")
+        .upload(filePath, photoFile, { contentType: photoFile.type || "image/jpeg", upsert: true });
+
+      if (uploadError) {
+        setMessage(uploadError.message);
+        setLoading(false);
+        return;
+      }
+
+      const { data: signedPhoto, error: signedError } = await supabase.storage
+        .from("caretaker-updates")
+        .createSignedUrl(filePath, 60 * 60 * 24 * 365);
+
+      if (signedError || !signedPhoto?.signedUrl) {
+        setMessage(signedError?.message || "Photo uploaded but could not be prepared for viewing.");
+        setLoading(false);
+        return;
+      }
+
+      uploadedPhotoUrl = signedPhoto.signedUrl;
+    }
 
     const { error } = await supabase.from("tree_growth_logs").insert({
       profile_id: treeForSubmit?.profile_id || null,
@@ -104,7 +145,7 @@ export default function FarmerGrowthLogsPage() {
       health_status: health,
       remarks: remarks.trim() || null,
       notes: remarks.trim() || null,
-      photo_url: photoUrl.trim() || null,
+      photo_url: uploadedPhotoUrl,
       status: "LOGGED",
     });
 
@@ -133,7 +174,7 @@ export default function FarmerGrowthLogsPage() {
     setDiameter("");
     setHealth("HEALTHY");
     setRemarks("");
-    setPhotoUrl("");
+    setPhotoFile(null);
     setMessage("Growth log submitted.");
     await loadData(email);
     setLoading(false);
@@ -188,7 +229,12 @@ export default function FarmerGrowthLogsPage() {
               <option>DAMAGED</option>
               <option>SICK</option>
             </select>
-            <input value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} placeholder="Photo URL" className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
+            <label className="block rounded-2xl border border-dashed border-emerald-200 bg-emerald-50 p-5">
+              <span className="text-sm font-black text-emerald-950">Optional Camera / Photo File</span>
+              <span className="mt-1 block text-xs font-bold text-emerald-800">Attach evidence from phone camera or file upload.</span>
+              <input type="file" accept="image/*" capture="environment" onChange={(e) => setPhotoFile(e.target.files?.[0] || null)} className="mt-4 w-full rounded-xl bg-white text-sm font-bold text-slate-900 file:mr-4 file:rounded-xl file:border-0 file:bg-emerald-600 file:px-4 file:py-3 file:text-sm file:font-black file:text-white" />
+              {photoFile && <span className="mt-3 block text-sm font-black text-emerald-800">Selected: {photoFile.name}</span>}
+            </label>
             <textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} rows={5} placeholder="Remarks" className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
 
             <button onClick={submitLog} disabled={loading} className="w-full rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500">

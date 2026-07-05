@@ -48,8 +48,8 @@ export default function HarvestPage() {
     if (treeIds.length > 0) {
       const { data } = await supabase
         .from("tree_growth_logs")
-        .select("id, tree_id, height_cm, diameter_cm, health_status, remarks, photo_url, created_at")
-        .in("tree_id", treeIds)
+        .select("id, profile_id, tree_id, tree_code, height_cm, diameter_cm, health_status, remarks, notes, photo_url, created_at")
+        .eq("profile_id", profileRow.id)
         .order("created_at", { ascending: false });
       logRows = (data || []) as AnyRow[];
     }
@@ -101,7 +101,7 @@ export default function HarvestPage() {
                 <Empty text="No AG trees yet." />
               </div>
             ) : trees.map((tree) => {
-              const latest = latestLogForTree(tree.id, logs);
+              const latest = latestLogForTree(tree, logs);
               return (
                 <div key={tree.id} className="rounded-3xl border border-white/10 bg-black/25 p-5">
                   <div className="flex items-start justify-between gap-3">

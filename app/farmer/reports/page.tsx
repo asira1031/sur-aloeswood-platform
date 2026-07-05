@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
+import { getAuthenticatedProfile } from "@/app/lib/auth/session";
 import { formatDate, getTreeLabel, pick, statusClass, type AnyRow } from "@/app/lib/farmer/reports";
 
 export default function FarmerReportsPage() {
@@ -16,9 +17,22 @@ export default function FarmerReportsPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem("sur_login_email") || "";
-    setEmail(saved);
-    if (saved) loadReports(saved);
+    let mounted = true;
+
+    async function boot() {
+      const saved = localStorage.getItem("sur_login_email") || "";
+      const profile = saved ? null : await getAuthenticatedProfile();
+      const targetEmail = saved || profile?.email || "";
+      if (!mounted) return;
+      setEmail(targetEmail);
+      if (targetEmail) loadReports(targetEmail);
+    }
+
+    boot();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   async function loadReports(targetEmail = email) {

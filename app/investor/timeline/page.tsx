@@ -49,8 +49,8 @@ export default function CoPlanterTimelinePage() {
     if (treeIds.length > 0) {
       const { data } = await supabase
         .from("tree_growth_logs")
-        .select("id, tree_id, height_cm, diameter_cm, health_status, remarks, photo_url, created_at")
-        .in("tree_id", treeIds)
+        .select("id, profile_id, tree_id, tree_code, height_cm, diameter_cm, health_status, remarks, notes, photo_url, created_at")
+        .eq("profile_id", profileRow.id)
         .order("created_at", { ascending: false });
       logRows = (data || []) as AnyRow[];
     }
@@ -63,7 +63,7 @@ export default function CoPlanterTimelinePage() {
   }
 
   const selectedTree = useMemo(() => trees.find((tree) => tree.id === selectedTreeId) || null, [trees, selectedTreeId]);
-  const treeLogs = useMemo(() => selectedTree ? logsForTree(selectedTree.id, logs) : [], [selectedTree, logs]);
+  const treeLogs = useMemo(() => selectedTree ? logsForTree(selectedTree, logs) : [], [selectedTree, logs]);
 
   return (
     <main className="min-h-screen bg-[#06170f] text-white">

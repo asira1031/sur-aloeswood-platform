@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 function makeReferralCode(fullName: string) {
   const base = fullName
@@ -26,6 +26,11 @@ export default function RegisterPage() {
 
   const referralCode = useMemo(() => makeReferralCode(fullName), [fullName]);
   const cleanEmail = email.toLowerCase().trim();
+
+  useEffect(() => {
+    const ref = new URLSearchParams(window.location.search).get("ref") || "";
+    if (ref) setReferredBy(ref.trim());
+  }, []);
 
   function validateForm() {
     if (!fullName.trim() || !cleanEmail || !mobile.trim() || !address.trim()) {

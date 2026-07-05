@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
+import { getAuthenticatedProfile } from "@/app/lib/auth/session";
 import {
   formatDate,
   getAssignmentTree,
@@ -23,9 +24,22 @@ export default function FarmerAssignedTreesPage() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    const saved = localStorage.getItem("sur_login_email") || "";
-    setEmail(saved);
-    if (saved) loadAssignedTrees(saved);
+    let mounted = true;
+
+    async function boot() {
+      const saved = localStorage.getItem("sur_login_email") || "";
+      const profile = saved ? null : await getAuthenticatedProfile();
+      const targetEmail = saved || profile?.email || "";
+      if (!mounted) return;
+      setEmail(targetEmail);
+      if (targetEmail) loadAssignedTrees(targetEmail);
+    }
+
+    boot();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   async function loadAssignedTrees(targetEmail = email) {
@@ -37,19 +51,19 @@ export default function FarmerAssignedTreesPage() {
     const { data: gardenerRow } = await supabase
       .from("gardeners")
       .select("*")
-      .or(`email.eq.${cleanEmail},farmer_email.eq.${cleanEmail},gardener_email.eq.${cleanEmail}`)
+      .eq("email", cleanEmail)
       .maybeSingle();
 
-    const farmerId = gardenerRow?.id || gardenerRow?.profile_id || gardenerRow?.farmer_profile_id || gardenerRow?.gardener_profile_id;
+    const farmerId = gardenerRow?.id;
 
     const [{ data: assignmentRows, error: assignmentError }, { data: treeRows }] = await Promise.all([
       farmerId
         ? supabase
             .from("gardener_assignments")
             .select("*")
-            .or(`gardener_id.eq.${farmerId},farmer_id.eq.${farmerId},gardener_profile_id.eq.${farmerId},farmer_profile_id.eq.${farmerId}`)
+            .eq("gardener_id", farmerId)
             .order("assigned_at", { ascending: false })
-        : supabase.from("gardener_assignments").select("*").order("assigned_at", { ascending: false }).limit(200),
+        : supabase.from("gardener_assignments").select("*").eq("gardener_id", "00000000-0000-0000-0000-000000000000").limit(0),
       supabase.from("tree_registry").select("id, profile_id, purchase_id, tree_code, denr_tag_number, species, status, gps_lat, gps_lng, farm_id, farm_location_note, planted_at, created_at").order("created_at", { ascending: false }).limit(1000),
     ]);
 

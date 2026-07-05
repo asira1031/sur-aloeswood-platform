@@ -199,8 +199,8 @@ export default function InvestorDashboardPage() {
     if (treeIds.length > 0) {
       const { data } = await supabase
         .from("tree_growth_logs")
-        .select("id, tree_id, height_cm, diameter_cm, health_status, remarks, photo_url, created_at")
-        .in("tree_id", treeIds)
+        .select("id, profile_id, tree_id, tree_code, height_cm, diameter_cm, health_status, remarks, photo_url, created_at")
+        .eq("profile_id", profileRow.id)
         .order("created_at", { ascending: false });
 
       logRows = (data || []) as AnyRow[];

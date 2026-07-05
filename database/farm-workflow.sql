@@ -2,6 +2,18 @@
 -- Run once in Supabase SQL Editor after maintenance-orders.sql and farms.sql.
 
 alter table if exists public.gardener_assignments
+  add column if not exists gardener_id uuid;
+
+alter table if exists public.gardener_assignments
+  add column if not exists tree_id uuid;
+
+alter table if exists public.gardener_assignments
+  add column if not exists status text default 'ASSIGNED';
+
+alter table if exists public.gardener_assignments
+  add column if not exists assigned_at timestamptz default now();
+
+alter table if exists public.gardener_assignments
   add column if not exists maintenance_order_id uuid references public.maintenance_orders(id) on delete set null;
 
 alter table if exists public.gardener_assignments

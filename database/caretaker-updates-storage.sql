@@ -1,10 +1,19 @@
 -- SUR Aloeswood caretaker field photo storage.
--- Safer setup: private bucket, authenticated access only.
+-- Private bucket for farmer/caretaker proof photos.
 -- Run once in Supabase SQL Editor.
 
-insert into storage.buckets (id, name, public)
-values ('caretaker-updates', 'caretaker-updates', false)
-on conflict (id) do update set public = false;
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'caretaker-updates',
+  'caretaker-updates',
+  false,
+  10485760,
+  array['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']
+)
+on conflict (id) do update set
+  public = false,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
 
 do $$
 begin

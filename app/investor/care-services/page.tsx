@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/app/lib/supabase/client";
+import { logBelongsToTree } from "@/app/lib/coplanting/live";
 
 type Profile = {
   id: string;
@@ -351,7 +352,7 @@ export default function CareServicesPage() {
   );
   const selectedServiceItem = maintenanceServices.find((item) => item.key === selectedService) || maintenanceServices[0];
   const treeOrders = orders.filter((order) => order.tree_id === selectedTree?.id);
-  const selectedLogs = logs.filter((log) => log.tree_id === selectedTree?.id);
+  const selectedLogs = selectedTree ? logs.filter((log) => logBelongsToTree(selectedTree, log)) : [];
   const latestPhoto = selectedLogs.find((log) => Boolean(log.photo_url));
   const canPayNow = Number(wallet?.balance || 0) >= Number(selectedServiceItem.amount || 0);
 

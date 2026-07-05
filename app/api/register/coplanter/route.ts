@@ -4,6 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function makeReferralCode(fullName: string) {
   const base = fullName
     .replace(/[^a-zA-Z]/g, "")
@@ -11,6 +13,44 @@ function makeReferralCode(fullName: string) {
     .toUpperCase();
   const random = Math.floor(100000 + Math.random() * 900000);
   return `${base || "SUR"}${random}`;
+}
+
+async function findAuthUserIdByEmail(admin: any, email: string) {
+  const perPage = 1000;
+
+  for (let page = 1; page <= 20; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+
+    if (error) throw error;
+
+    const match = data.users.find((authUser: any) => authUser.email?.toLowerCase().trim() === email);
+    if (match?.id) return match.id;
+    if (data.users.length < perPage) return "";
+  }
+
+  return "";
+}
+
+async function makeUniqueReferralCode(admin: any, fullName: string, preferredCode: string) {
+  const cleanPreferred = preferredCode.replace(/[^a-zA-Z0-9_-]/g, "").toUpperCase().slice(0, 24);
+  const candidates = [cleanPreferred || makeReferralCode(fullName)];
+
+  while (candidates.length < 8) {
+    candidates.push(makeReferralCode(fullName));
+  }
+
+  for (const code of candidates) {
+    const { data, error } = await admin
+      .from("profiles")
+      .select("id")
+      .eq("referral_code", code)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return code;
+  }
+
+  return `${makeReferralCode(fullName)}${Date.now().toString().slice(-4)}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -25,10 +65,14 @@ export async function POST(request: NextRequest) {
   const mobile = String(body?.mobile || "").trim();
   const address = String(body?.address || "").trim();
   const referredBy = String(body?.referredBy || "").trim();
-  const referralCode = String(body?.referralCode || "").trim() || makeReferralCode(fullName);
+  const preferredReferralCode = String(body?.referralCode || "").trim();
 
   if (!fullName || !email || !mobile || !address) {
     return NextResponse.json({ error: "Please complete your personal information." }, { status: 400 });
+  }
+
+  if (!emailPattern.test(email)) {
+    return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
   }
 
   if (password.length < 8) {
@@ -53,17 +97,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Email already registered. Please login." }, { status: 409 });
   }
 
-  const { data: authUsers, error: listUsersError } = await admin.auth.admin.listUsers({
-    page: 1,
-    perPage: 1000,
-  });
+  let authUserId = "";
+  let createdAuthUser = false;
+  let profileCreated = false;
 
-  if (listUsersError) {
-    return NextResponse.json({ error: listUsersError.message }, { status: 500 });
+  try {
+    authUserId = await findAuthUserIdByEmail(admin, email);
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || "Unable to verify login account." }, { status: 500 });
   }
-
-  const existingAuthUser = authUsers.users.find((authUser) => authUser.email?.toLowerCase().trim() === email);
-  let authUserId = existingAuthUser?.id;
 
   if (authUserId) {
     const { error: authUpdateError } = await admin.auth.admin.updateUserById(authUserId, {
@@ -94,6 +136,16 @@ export async function POST(request: NextRequest) {
     }
 
     authUserId = authCreateData.user.id;
+    createdAuthUser = true;
+  }
+
+  let uniqueReferralCode = "";
+
+  try {
+    uniqueReferralCode = await makeUniqueReferralCode(admin, fullName, preferredReferralCode);
+  } catch (error: any) {
+    if (createdAuthUser && authUserId) await admin.auth.admin.deleteUser(authUserId).catch(() => null);
+    return NextResponse.json({ error: error?.message || "Unable to create referral code." }, { status: 500 });
   }
 
   const { data: profile, error: profileError } = await admin
@@ -109,23 +161,42 @@ export async function POST(request: NextRequest) {
       kyc_status: "PENDING",
       account_status: "ACTIVE",
       membership_status: "PENDING",
-      referral_code: referralCode,
+      wallet_balance: 0,
+      referral_code: uniqueReferralCode,
       referred_by: referredBy || null,
     })
     .select("id, email, full_name, referral_code")
     .single();
 
   if (profileError || !profile) {
+    if (createdAuthUser && authUserId) await admin.auth.admin.deleteUser(authUserId).catch(() => null);
     return NextResponse.json({ error: profileError?.message || "Unable to create profile." }, { status: 500 });
   }
 
-  const { error: walletError } = await admin.from("wallets").insert({
-    profile_id: profile.id,
-    balance: 0,
-  });
+  profileCreated = true;
+
+  const { data: existingWallet, error: existingWalletError } = await admin
+    .from("wallets")
+    .select("id")
+    .eq("profile_id", profile.id)
+    .maybeSingle();
+
+  const walletWrite = existingWallet
+    ? await admin
+        .from("wallets")
+        .update({ balance: 0, updated_at: new Date().toISOString() })
+        .eq("id", existingWallet.id)
+    : await admin.from("wallets").insert({
+        profile_id: profile.id,
+        balance: 0,
+        updated_at: new Date().toISOString(),
+      });
+
+  const walletError = existingWalletError || walletWrite.error;
 
   if (walletError) {
-    await admin.from("profiles").delete().eq("id", profile.id);
+    if (profileCreated) await admin.from("profiles").delete().eq("id", profile.id);
+    if (createdAuthUser && authUserId) await admin.auth.admin.deleteUser(authUserId).catch(() => null);
     return NextResponse.json({ error: walletError.message }, { status: 500 });
   }
 
@@ -139,7 +210,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     profile,
-    referralCode,
+    referralCode: uniqueReferralCode,
     message: "Your co-planter account is ready.",
   });
 }
