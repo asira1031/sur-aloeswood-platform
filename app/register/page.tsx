@@ -12,6 +12,16 @@ function makeReferralCode(fullName: string) {
   return `${base || "SUR"}${random}`;
 }
 
+function makeReferralCode(fullName: string) {
+  const base = fullName
+    .replace(/[^a-zA-Z]/g, "")
+    .slice(0, 4)
+    .toUpperCase();
+
+  const random = Math.floor(100000 + Math.random() * 900000);
+  return `${base || "SUR"}${random}`;
+}
+
 export default function RegisterPage() {
   const [step, setStep] = useState<"FORM" | "DONE">("FORM");
   const [fullName, setFullName] = useState("");
@@ -44,7 +54,10 @@ export default function RegisterPage() {
       return;
     }
 
-    setLoading(true);
+    if (!accountName || !accountNumber) {
+      setMessage("Please add your Bank / GCash / Maya account.");
+      return;
+    }
 
     const response = await fetch("/api/register/coplanter", {
       method: "POST",
