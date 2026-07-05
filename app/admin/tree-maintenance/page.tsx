@@ -72,7 +72,7 @@ export default function AdminTreeMaintenancePage() {
           .order("created_at", { ascending: false }),
         supabase
           .from("gardener_assignments")
-          .select("id, gardener_id, tree_id, status, assigned_at")
+          .select("id, gardener_id, tree_id, maintenance_order_id, profile_id, tree_code, task_type, notes, status, assigned_at, updated_at")
           .order("assigned_at", { ascending: false }),
         supabase.from("wallets").select("id, profile_id, balance, updated_at"),
         supabase
@@ -285,7 +285,7 @@ export default function AdminTreeMaintenancePage() {
       orderForAssignment = { ...selectedOrder, payment_status: "PAID", work_status: "READY_FOR_ASSIGNMENT", amount: getOrderAmount(selectedOrder) };
     }
 
-    const existingAssignment = assignmentForTree(selectedTree.id);
+    const existingAssignment = assignmentForOrder(orderForAssignment.id);
     const assignmentPayload = {
       gardener_id: selectedGardener.id,
       tree_id: selectedTree.id,
@@ -294,7 +294,7 @@ export default function AdminTreeMaintenancePage() {
       tree_code: selectedTree.tree_code || null,
       task_type: orderForAssignment.service_type || "MAINTENANCE",
       notes: adminNote.trim() || orderForAssignment.customer_note || null,
-      status: `ASSIGNED_${orderForAssignment.service_type || "MAINTENANCE"}`,
+      status: "ASSIGNED",
       assigned_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -334,12 +334,16 @@ export default function AdminTreeMaintenancePage() {
 
     setAdminNote("");
     setSaving(false);
-    setMessage(`${selectedTree.tree_code || "AG Tree"} maintenance order assigned to ${selectedGardener.full_name || selectedGardener.email}.`);
+    setMessage(`${selectedTree.tree_code || "AG Tree"} ${existingAssignment ? "assignment updated" : "maintenance order assigned"} to ${selectedGardener.full_name || selectedGardener.email}.`);
     await loadMaintenance();
   }
 
   function assignmentForTree(treeId?: string | null) {
     return assignments.find((assignment) => assignment.tree_id === treeId) || null;
+  }
+
+  function assignmentForOrder(orderId?: string | null) {
+    return assignments.find((assignment) => assignment.maintenance_order_id === orderId) || null;
   }
 
   function gardenerForAssignment(assignment?: AnyRow | null) {
@@ -371,8 +375,17 @@ export default function AdminTreeMaintenancePage() {
   const activeGardeners = gardeners.filter((gardener) => String(gardener.status || "").toUpperCase() === "ACTIVE");
   const selectedAssignment = assignmentForTree(selectedTree?.id);
   const assignedGardener = gardenerForAssignment(selectedAssignment);
+  const selectedOrderAssignment = assignmentForOrder(selectedOrder?.id);
+  const selectedOrderGardener = gardenerForAssignment(selectedOrderAssignment);
   const paidOrders = orders.filter(isOrderAssignable).length;
   const pendingPaymentOrders = orders.filter((order) => String(order.payment_status || "").toUpperCase() === "PENDING_PAYMENT").length;
+  const primaryAssignLabel = saving
+    ? "Processing..."
+    : selectedOrderAssignment
+      ? "Update Assigned Caretaker"
+      : selectedOrder && isOrderAssignable(selectedOrder)
+        ? "Assign Caretaker"
+        : "Charge Wallet & Assign Caretaker";
 
   return (
     <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
@@ -486,7 +499,7 @@ export default function AdminTreeMaintenancePage() {
             )}
           </Panel>
 
-          <Panel title="3. Charge & Assign" subtitle="Select a paid or payable order, then assign it to a caretaker in one action.">
+          <Panel title="3. Payment + Assignment Control" subtitle="One order creates one caretaker task. Reassigning updates the same task, not a duplicate.">
             {!selectedTree ? (
               <Empty text="Select an AG tree first." />
             ) : (
@@ -497,7 +510,7 @@ export default function AdminTreeMaintenancePage() {
                   <p className="mt-2 text-sm font-bold text-slate-600">{selectedProfile?.full_name || selectedProfile?.email}</p>
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     <Info label="DENR Tag" value={selectedTree.denr_tag_number || "Pending"} />
-                    <Info label="Current Caretaker" value={assignedGardener?.full_name || assignedGardener?.email || "Unassigned"} />
+                    <Info label="Current Tree Caretaker" value={assignedGardener?.full_name || assignedGardener?.email || "Unassigned"} />
                     <Info label="Customer Wallet" value={peso(selectedWallet?.balance)} />
                   </div>
                 </div>
@@ -539,6 +552,8 @@ export default function AdminTreeMaintenancePage() {
                       <Info label="Work Status" value={selectedOrder.work_status || "PENDING"} />
                       <Info label="Created" value={formatDate(selectedOrder.created_at)} />
                       <Info label="Paid At" value={formatDate(selectedOrder.paid_at)} />
+                      <Info label="Assigned To" value={selectedOrderGardener?.full_name || selectedOrderGardener?.email || "Not assigned yet"} />
+                      <Info label="Assignment Record" value={selectedOrderAssignment ? "Existing task will be updated" : "New task will be created"} />
                     </div>
                     {selectedOrder.customer_note && (
                       <p className="mt-3 rounded-2xl border border-white bg-white px-4 py-3 text-sm font-bold text-slate-600">{selectedOrder.customer_note}</p>
@@ -591,17 +606,12 @@ export default function AdminTreeMaintenancePage() {
                 />
 
                 <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm font-bold leading-6 text-emerald-900">
-                  Flow: Assign Caretaker will charge the customer's SUR wallet first when the order is still pending, then create or update the caretaker task.
+                  Flow: this button charges the customer's SUR wallet if needed, then creates one caretaker task for this order. If this order already has a task, it updates the same task instead of duplicating it.
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <button onClick={() => selectedOrder && markOrderPaid(selectedOrder)} disabled={saving || !selectedOrder || isOrderAssignable(selectedOrder)} className="rounded-2xl border border-emerald-200 bg-white px-6 py-4 text-sm font-black text-emerald-800 hover:bg-emerald-50 disabled:opacity-60">
-                    Charge Wallet Only
-                  </button>
-                  <button onClick={assignCaretaker} disabled={saving || !selectedOrder || shouldQuoteOrder(selectedOrder)} className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60">
-                    {saving ? "Processing..." : isOrderAssignable(selectedOrder) ? "Assign Caretaker" : "Charge & Assign Caretaker"}
-                  </button>
-                </div>
+                <button onClick={assignCaretaker} disabled={saving || !selectedOrder || shouldQuoteOrder(selectedOrder)} className="w-full rounded-2xl bg-emerald-600 px-6 py-5 text-base font-black text-white shadow-sm hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500">
+                  {primaryAssignLabel}
+                </button>
               </div>
             )}
           </Panel>

@@ -13,6 +13,8 @@ import {
 } from "@/app/lib/farmer/assignments";
 import { taskActionLabel, nextTaskStatus, taskStatus } from "@/app/lib/farmer/tasks";
 
+const CARETAKER_UPLOAD_BUCKET = "caretaker-updates";
+
 export default function FarmerTaskPage() {
   const [email, setEmail] = useState("");
   const [farmer, setFarmer] = useState<AnyRow | null>(null);
@@ -23,6 +25,7 @@ export default function FarmerTaskPage() {
   const [height, setHeight] = useState("");
   const [diameter, setDiameter] = useState("");
   const [health, setHealth] = useState("HEALTHY");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState("");
   const [message, setMessage] = useState("");
@@ -131,6 +134,18 @@ export default function FarmerTaskPage() {
     setLoading(true);
     setMessage("");
 
+    let photoUrl = "";
+
+    try {
+      if (photoFile) {
+        photoUrl = await uploadCaretakerPhoto(selected, tree, photoFile);
+      }
+    } catch (err: any) {
+      setMessage(err?.message || "Unable to upload field photo.");
+      setLoading(false);
+      return;
+    }
+
     const { error } = await supabase.from("tree_growth_logs").insert({
       profile_id: selected.profile_id || selected.owner_profile_id || null,
       tree_id: selected.tree_id || tree?.id || null,
@@ -141,6 +156,7 @@ export default function FarmerTaskPage() {
       health_status: health,
       remarks: note.trim() || "Farmer field update.",
       notes: note.trim() || "Farmer field update.",
+      photo_url: photoUrl || null,
       status: "LOGGED",
     });
 
@@ -171,8 +187,33 @@ export default function FarmerTaskPage() {
     setHeight("");
     setDiameter("");
     setHealth("HEALTHY");
-    setMessage("Growth log submitted.");
+    setPhotoFile(null);
+    setMessage(photoUrl ? "Field report and photo submitted." : "Field report submitted.");
     setLoading(false);
+  }
+
+  async function uploadCaretakerPhoto(assignment: AnyRow, tree: AnyRow | null, file: File) {
+    const extension = file.name.split(".").pop() || "jpg";
+    const safeTreeCode = String(assignment.tree_code || tree?.tree_code || assignment.tree_id || "tree").replace(/[^a-zA-Z0-9-]/g, "-");
+    const path = `${assignment.id}/${safeTreeCode}-${Date.now()}.${extension}`;
+    const { error } = await supabase.storage.from(CARETAKER_UPLOAD_BUCKET).upload(path, file, {
+      cacheControl: "3600",
+      upsert: true,
+    });
+
+    if (error) {
+      throw new Error(`${error.message}. Run database/caretaker-updates-storage.sql in Supabase if the upload bucket is not ready.`);
+    }
+
+    const { data, error: signedUrlError } = await supabase.storage
+      .from(CARETAKER_UPLOAD_BUCKET)
+      .createSignedUrl(path, 60 * 60 * 24 * 365);
+
+    if (signedUrlError || !data?.signedUrl) {
+      throw new Error(signedUrlError?.message || "Unable to create field photo access link.");
+    }
+
+    return data.signedUrl;
   }
 
   const groups = useMemo(() => {
@@ -260,7 +301,8 @@ export default function FarmerTaskPage() {
           </div>
 
           <div className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
-            <h2 className="text-3xl font-black">Submit Growth Log</h2>
+            <h2 className="text-3xl font-black">Submit Field Report</h2>
+            <p className="mt-2 text-sm font-bold text-slate-600">Use your phone camera or upload an existing photo, then submit notes for admin and co-planter review.</p>
 
             <div className="mt-6 grid gap-4 md:grid-cols-2">
               <input value={height} onChange={(e) => setHeight(e.target.value)} placeholder="Height cm" type="number" className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
@@ -273,10 +315,22 @@ export default function FarmerTaskPage() {
                 <option>SICK</option>
               </select>
               <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Field notes..." rows={4} className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400 md:col-span-2" />
+              <label className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/60 p-5 md:col-span-2">
+                <span className="block text-sm font-black text-slate-950">Field photo / camera proof</span>
+                <span className="mt-1 block text-xs font-bold text-slate-500">On mobile, this can open the camera. On desktop, choose an image file.</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(event) => setPhotoFile(event.target.files?.[0] || null)}
+                  className="mt-4 block w-full text-sm font-bold text-slate-700 file:mr-4 file:rounded-xl file:border-0 file:bg-emerald-600 file:px-4 file:py-2 file:text-sm file:font-black file:text-white"
+                />
+                {photoFile && <span className="mt-3 block text-sm font-black text-emerald-800">Selected: {photoFile.name}</span>}
+              </label>
             </div>
 
             <button onClick={submitGrowthLog} disabled={loading || !selected} className="mt-5 w-full rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500">
-              Submit Growth Log
+              {loading ? "Submitting..." : "Submit Report to Admin & Customer"}
             </button>
           </div>
         </div>
