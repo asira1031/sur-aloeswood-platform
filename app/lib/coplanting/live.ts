@@ -1,6 +1,7 @@
 export type AnyRow = Record<string, any>;
+import { COPLANTER_PACKAGE_PRICE } from "@/app/lib/business/rules";
 
-export const SEEDLING_PRICE = 14000;
+export const SEEDLING_PRICE = COPLANTER_PACKAGE_PRICE;
 
 export const peso = (value: any) =>
   `₱${Number(value || 0).toLocaleString("en-PH", {

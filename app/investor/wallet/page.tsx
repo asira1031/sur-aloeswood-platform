@@ -42,26 +42,49 @@ type WalletTransaction = {
   created_at: string | null;
 };
 
+type CashInRequest = {
+  id: string;
+  profile_id: string;
+  amount: number | null;
+  reference_no: string | null;
+  description?: string | null;
+  status: string | null;
+  created_at: string | null;
+};
+
 const peso = (value: number | null | undefined) =>
   `₱${Number(value || 0).toLocaleString("en-PH", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
 
+const formatDate = (value?: string | null) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+};
+
 const normalize = (value?: string | null) => String(value || "").toUpperCase();
 
-function badgeClass(status?: string | null) {
-  const value = normalize(status);
+const companyPaymentContact = {
+  payee: "SUR Aloeswood Corporation",
+  bank: "BDO",
+  accountName: "Donnabel Cabrido",
+  accountNumber: "010148009036",
+  address: "Sitio Morales, Centrala, Surallah, South Cotabato",
+  email: "suraloeswoodcorporation@gmail.com",
+  mobile: "+63 991 128 6188",
+};
 
-  if (["ACTIVE", "APPROVED", "PAID", "COMPLETED", "SUCCESS"].includes(value)) {
-    return "border-green-300/30 bg-green-400/15 text-green-100";
-  }
+const customerHiddenTransactionTypes = new Set(["PACKAGE_DISTRIBUTION_LEDGER"]);
 
-  if (["REJECTED", "FAILED", "CANCELLED", "SUSPENDED"].includes(value)) {
-    return "border-red-300/30 bg-red-400/15 text-red-100";
-  }
-
-  return "border-yellow-300/30 bg-yellow-400/15 text-yellow-100";
+function isCustomerVisibleTransaction(row: WalletTransaction) {
+  return !customerHiddenTransactionTypes.has(normalize(row.transaction_type));
 }
 
 export default function InvestorWalletPage() {
@@ -69,38 +92,25 @@ export default function InvestorWalletPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccount[]>([]);
+  const [cashInRequests, setCashInRequests] = useState<CashInRequest[]>([]);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
 
   const [cashInAmount, setCashInAmount] = useState("");
   const [cashInReference, setCashInReference] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [selectedPayoutId, setSelectedPayoutId] = useState("");
+  const [payoutType, setPayoutType] = useState("BANK");
+  const [payoutProvider, setPayoutProvider] = useState("");
+  const [payoutName, setPayoutName] = useState("");
+  const [payoutNumber, setPayoutNumber] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [submittingCashIn, setSubmittingCashIn] = useState(false);
   const [submittingWithdraw, setSubmittingWithdraw] = useState(false);
+  const [savingPayout, setSavingPayout] = useState(false);
 
   const [notice, setNotice] = useState("");
   const [noticeType, setNoticeType] = useState<"success" | "error" | "info">("info");
-
-  const pendingCashIn = useMemo(() => {
-    return transactions
-      .filter(
-        (tx) =>
-          normalize(tx.transaction_type) === "CASH_IN_REQUEST" &&
-          normalize(tx.status) === "PENDING"
-      )
-      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
-  }, [transactions]);
-
-  const pendingWithdraw = useMemo(() => {
-    return transactions
-      .filter(
-        (tx) =>
-          normalize(tx.transaction_type) === "WITHDRAW_REQUEST" &&
-          normalize(tx.status) === "PENDING"
-      )
-      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
-  }, [transactions]);
 
   useEffect(() => {
     const savedEmail = localStorage.getItem("sur_login_email") || "";
@@ -144,6 +154,7 @@ export default function InvestorWalletPage() {
       setProfile(null);
       setWallet(null);
       setLinkedAccounts([]);
+      setCashInRequests([]);
       setTransactions([]);
       setLoading(false);
       showNotice("No co-planter profile found for this email.", "error");
@@ -188,35 +199,44 @@ export default function InvestorWalletPage() {
       walletRow = foundWallet as Wallet;
     }
 
-    const { data: linkedRows, error: linkedError } = await supabase
-      .from("linked_accounts")
-      .select("id, profile_id, account_type, provider_name, account_name, account_number, status, created_at")
-      .eq("profile_id", profileRow.id)
-      .order("created_at", { ascending: false });
+    const [
+      { data: linkedRows, error: linkedError },
+      { data: cashinRows, error: cashinError },
+      { data: transactionRows, error: transactionError },
+    ] =
+      await Promise.all([
+        supabase
+          .from("linked_accounts")
+          .select("id, profile_id, account_type, provider_name, account_name, account_number, status, created_at")
+          .eq("profile_id", profileRow.id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("cashin_requests")
+          .select("id, profile_id, amount, reference_no, description, status, created_at")
+          .eq("profile_id", profileRow.id)
+          .order("created_at", { ascending: false })
+          .limit(100),
+        supabase
+          .from("wallet_transactions")
+          .select("id, profile_id, transaction_type, amount, description, status, created_at")
+          .eq("profile_id", profileRow.id)
+          .order("created_at", { ascending: false })
+          .limit(100),
+      ]);
 
-    if (linkedError) {
+    if (linkedError || cashinError || transactionError) {
       setLoading(false);
-      showNotice(linkedError.message, "error");
-      return;
-    }
-
-    const { data: transactionRows, error: transactionError } = await supabase
-      .from("wallet_transactions")
-      .select("id, profile_id, transaction_type, amount, description, status, created_at")
-      .eq("profile_id", profileRow.id)
-      .order("created_at", { ascending: false })
-      .limit(100);
-
-    if (transactionError) {
-      setLoading(false);
-      showNotice(transactionError.message, "error");
+      showNotice(linkedError?.message || cashinError?.message || transactionError?.message || "Unable to load wallet data.", "error");
       return;
     }
 
     setProfile(profileRow as Profile);
     setWallet(walletRow);
     setLinkedAccounts((linkedRows || []) as LinkedAccount[]);
-    setTransactions((transactionRows || []) as WalletTransaction[]);
+    setCashInRequests((cashinRows || []) as CashInRequest[]);
+    setTransactions(((transactionRows || []) as WalletTransaction[]).filter(isCustomerVisibleTransaction));
+    const firstLinked = (linkedRows?.[0] as LinkedAccount | undefined)?.id || "";
+    setSelectedPayoutId((current) => (current && linkedRows?.some((row) => row.id === current) ? current : firstLinked));
     setLoading(false);
   }
 
@@ -229,24 +249,25 @@ export default function InvestorWalletPage() {
     }
 
     const amount = Number(cashInAmount);
+    const reference = cashInReference.trim();
 
     if (!amount || amount <= 0) {
       showNotice("Enter a valid cash-in amount.", "error");
       return;
     }
 
-    if (!cashInReference.trim()) {
+    if (!reference) {
       showNotice("Enter your payment reference number.", "error");
       return;
     }
 
     setSubmittingCashIn(true);
 
-    const { error } = await supabase.from("wallet_transactions").insert({
+    const { error } = await supabase.from("cashin_requests").insert({
       profile_id: profile.id,
-      transaction_type: "CASH_IN_REQUEST",
       amount,
-      description: `Cash-in request submitted by co-planter. Payment reference: ${cashInReference.trim()}`,
+      reference_no: reference,
+      description: `Investor cash-in submitted from wallet page. Reference: ${reference}`,
       status: "PENDING",
     });
 
@@ -259,7 +280,7 @@ export default function InvestorWalletPage() {
 
     setCashInAmount("");
     setCashInReference("");
-    showNotice("Cash-in request submitted. Admin treasury will verify it.", "success");
+    showNotice("Cash-in request submitted. Admin Treasury will verify and credit your wallet.", "success");
     await loadWallet(profile.email || email);
   }
 
@@ -272,6 +293,8 @@ export default function InvestorWalletPage() {
     }
 
     const amount = Number(withdrawAmount);
+    const selectedPayout = linkedAccounts.find((account) => account.id === selectedPayoutId);
+    const approvedPayout = selectedPayout || linkedAccounts.find((account) => normalize(account.status) === "APPROVED") || linkedAccounts[0];
 
     if (!amount || amount <= 0) {
       showNotice("Enter a valid withdrawal amount.", "error");
@@ -283,22 +306,26 @@ export default function InvestorWalletPage() {
       return;
     }
 
-    if (linkedAccounts.length === 0) {
-      showNotice("No linked payout account found.", "error");
+    if (!approvedPayout) {
+      showNotice("Add a payout account in Profile/KYC before requesting a withdrawal.", "error");
+      return;
+    }
+
+    if (normalize(profile.kyc_status) !== "APPROVED") {
+      showNotice("KYC approval is required before withdrawal processing.", "error");
       return;
     }
 
     setSubmittingWithdraw(true);
 
-    const payout = linkedAccounts[0];
-
+    const requestReference = `WD-${Date.now()}`;
     const { error } = await supabase.from("wallet_transactions").insert({
       profile_id: profile.id,
       transaction_type: "WITHDRAW_REQUEST",
       amount,
-      description: `Withdrawal request submitted. Preferred payout: ${
-        payout.provider_name || payout.account_type || "linked account"
-      } ${payout.account_number || ""}. Reference: WD-${Date.now()}`,
+      description: `Withdrawal request ${requestReference}. Payout: ${
+        approvedPayout.provider_name || approvedPayout.account_type || "linked account"
+      } ${approvedPayout.account_number || ""}.`,
       status: "PENDING",
     });
 
@@ -310,161 +337,376 @@ export default function InvestorWalletPage() {
     }
 
     setWithdrawAmount("");
-    showNotice("Withdrawal request submitted. Admin treasury will process it.", "success");
+    showNotice("Withdrawal request submitted. Admin Withdrawals will review and process it.", "success");
     await loadWallet(profile.email || email);
   }
 
+  async function savePayoutMethod() {
+    setNotice("");
+
+    if (!profile) {
+      showNotice("Load your wallet first.", "error");
+      return;
+    }
+
+    if (!payoutProvider.trim() || !payoutName.trim() || !payoutNumber.trim()) {
+      showNotice("Complete the withdrawal method details first.", "error");
+      return;
+    }
+
+    setSavingPayout(true);
+    const { data, error } = await supabase.from("linked_accounts").insert({
+      profile_id: profile.id,
+      account_type: payoutType,
+      provider_name: payoutProvider.trim(),
+      account_name: payoutName.trim(),
+      account_number: payoutNumber.trim(),
+      status: "PENDING",
+    }).select("id, profile_id, account_type, provider_name, account_name, account_number, status, created_at").single();
+    setSavingPayout(false);
+
+    if (error) {
+      showNotice(error.message, "error");
+      return;
+    }
+
+    setPayoutProvider("");
+    setPayoutName("");
+    setPayoutNumber("");
+    if (data?.id) setSelectedPayoutId(data.id);
+    showNotice("Withdrawal method saved for admin review.", "success");
+    await loadWallet(profile.email || email);
+  }
+
+  const pendingCashIn = useMemo(
+    () =>
+      cashInRequests
+        .filter((request) => normalize(request.status) === "PENDING")
+        .reduce((sum, request) => sum + Number(request.amount || 0), 0),
+    [cashInRequests]
+  );
+
+  const latestTransactions = transactions.slice(0, 8);
+  const selectedPayout = linkedAccounts.find((account) => account.id === selectedPayoutId) || linkedAccounts[0];
+  const walletBalance = Number(wallet?.balance || 0);
+  const canWithdraw = Boolean(profile && wallet && walletBalance > 0 && normalize(profile.kyc_status) === "APPROVED" && selectedPayout);
+
   return (
-    <main className="min-h-screen bg-[#04140d] text-white">
-      <section className="border-b border-white/10 px-6 py-8 md:px-10">
-        <div className="mx-auto max-w-7xl">
-          <div className="flex flex-wrap items-start justify-between gap-5">
+    <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
+      <div className="mx-auto w-full max-w-[1500px] px-4 py-4 lg:px-6">
+        <section className="relative overflow-hidden rounded-[2rem] border border-white/20 p-6 shadow-sm lg:p-8">
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/forest-bg.jpg')" }} />
+          <div className="absolute inset-0 bg-gradient-to-r from-green-950/90 via-green-900/66 to-green-950/18" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/10" />
+
+          <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.35em] text-green-300">
-                SUR ALOESWOOD CO-PLANTER
-              </p>
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-6xl">
-                Wallet Center
+              <p className="text-xs font-black uppercase tracking-[0.32em] text-white/75">Investor Wallet Center</p>
+              <h1 className="mt-4 max-w-3xl text-4xl font-black leading-tight text-white lg:text-6xl">
+                Cash-In and Withdrawals
               </h1>
-              <p className="mt-4 max-w-3xl text-sm leading-7 text-green-50/80 md:text-base">
-                Load your live wallet, submit cash-in requests, request withdrawals, review payout
-                accounts, and monitor all wallet transaction activity.
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-white/78 lg:text-base">
+                Record manual bank/e-wallet payments, request withdrawals, choose payout methods, and monitor ledger activity.
               </p>
             </div>
 
             <div className="flex flex-wrap gap-3">
-              <Link href="/investor/dashboard" className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-sm font-black hover:bg-white/15">
+              <button
+                onClick={() => loadWallet()}
+                disabled={loading}
+                className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 shadow-sm hover:bg-white/90 disabled:opacity-60"
+              >
+                {loading ? "Loading..." : "Refresh"}
+              </button>
+              <Link
+                href="/investor/dashboard"
+                className="rounded-2xl border border-white/25 bg-white/15 px-5 py-3 text-sm font-black text-white backdrop-blur hover:bg-white/20"
+              >
                 Dashboard
-              </Link>
-              <Link href="/investor/marketplace" className="rounded-2xl bg-green-500 px-5 py-3 text-sm font-black text-green-950 hover:bg-green-400">
-                Buy Seedlings
-              </Link>
-              <Link href="/tree" className="rounded-2xl border border-yellow-300/30 bg-yellow-400/10 px-5 py-3 text-sm font-black text-yellow-100 hover:bg-yellow-400/20">
-                My Trees
               </Link>
             </div>
           </div>
 
-          <div className="mt-8 grid gap-3 rounded-3xl border border-white/10 bg-white/10 p-4 md:grid-cols-[1fr_auto]">
-            <input
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="Registered email"
-              className="w-full rounded-2xl border border-white/10 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none"
-            />
-            <button
-              onClick={() => loadWallet()}
-              disabled={loading}
-              className="rounded-2xl bg-green-500 px-8 py-4 text-sm font-black text-green-950 hover:bg-green-400 disabled:cursor-not-allowed disabled:bg-slate-500"
-            >
-              {loading ? "Loading..." : "Load Wallet"}
-            </button>
+          <div className="relative z-10 mt-8 grid gap-3 md:grid-cols-3">
+            <HeroStat label="Available Balance" value={peso(wallet?.balance)} />
+            <HeroStat label="Pending Cash-In" value={peso(pendingCashIn)} />
+            <HeroStat label="Transaction History" value={`${transactions.length} records`} />
           </div>
 
           {notice && (
-            <div
-              className={`mt-4 rounded-2xl border px-5 py-4 text-sm font-bold ${
-                noticeType === "success"
-                  ? "border-green-300/30 bg-green-400/15 text-green-100"
-                  : noticeType === "error"
-                  ? "border-red-300/30 bg-red-400/15 text-red-100"
-                  : "border-yellow-300/30 bg-yellow-400/15 text-yellow-100"
-              }`}
-            >
+            <div className={`relative z-10 mt-5 rounded-2xl border px-5 py-4 text-sm font-bold ${noticeStyles[noticeType]}`}>
               {notice}
             </div>
           )}
-        </div>
-      </section>
-
-      <section className="mx-auto grid max-w-7xl gap-5 px-6 py-8 md:grid-cols-2 md:px-10 xl:grid-cols-4">
-        <Metric title="Available Balance" value={peso(wallet?.balance)} />
-        <Metric title="Pending Cash-In" value={peso(pendingCashIn)} />
-        <Metric title="Pending Withdraw" value={peso(pendingWithdraw)} />
-        <Metric title="Linked Accounts" value={String(linkedAccounts.length)} />
-      </section>
-
-      <section className="mx-auto grid max-w-7xl gap-6 px-6 pb-8 md:px-10 lg:grid-cols-[1fr_0.85fr]">
-        <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
-          <h2 className="text-3xl font-black">Co-Planter Account</h2>
-          <div className="mt-6 grid gap-3">
-            <InfoRow label="Name" value={profile?.full_name || "Not loaded"} />
-            <InfoRow label="Email" value={profile?.email || "Not loaded"} />
-            <InfoRow label="Mobile" value={profile?.mobile || "Not loaded"} />
-            <InfoRow label="KYC" value={profile?.kyc_status || "Not loaded"} />
-            <InfoRow
-              label="Last Wallet Update"
-              value={wallet?.updated_at ? new Date(wallet.updated_at).toLocaleString() : "Not loaded"}
-            />
+          <div className="relative z-10 mt-5 rounded-2xl border border-white/20 bg-white/15 px-5 py-4 text-sm font-bold leading-7 text-white/82 backdrop-blur">
+            This wallet is a ledger and request center. Send real payment only to the official SUR payment account below. After admin verifies the receipt, your wallet is credited and the finance split is recorded internally by Treasury.
           </div>
-        </div>
+        </section>
 
-        <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
-          <h2 className="text-3xl font-black">Linked Accounts</h2>
-
-          <div className="mt-6 space-y-3">
-            {linkedAccounts.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-black/25 p-5 text-sm font-bold text-white/60">
-                No linked account found.
+        <section className="py-5">
+          <section className="overflow-hidden rounded-[2rem] border border-emerald-100 bg-gradient-to-br from-emerald-700 via-emerald-600 to-green-500 p-5 text-white shadow-sm lg:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.3em] text-white/70">SUR Wallet</p>
+                <h2 className="mt-3 text-4xl font-black">{peso(walletBalance)}</h2>
+                <p className="mt-2 text-sm font-bold text-white/75">Available balance for approved wallet transactions.</p>
               </div>
+              <div className="rounded-2xl bg-white/18 px-4 py-3 text-right backdrop-blur">
+                <p className="text-xs font-black uppercase tracking-wide text-white/65">Account</p>
+                <p className="mt-1 max-w-[180px] truncate text-sm font-black">{profile?.full_name || "Not loaded"}</p>
+              </div>
+            </div>
+
+            <div className="mt-7 grid grid-cols-3 gap-3">
+              <WalletAction label="Cash In" detail="Submit reference" />
+              <WalletAction label="Withdraw" detail={canWithdraw ? "Ready" : "Needs KYC"} />
+              <WalletAction label="History" detail={`${transactions.length + cashInRequests.length} records`} />
+            </div>
+
+            <div className="mt-6 rounded-3xl border border-white/20 bg-white/14 p-4 backdrop-blur">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-wide text-white/65">Pending Cash-In</p>
+                  <p className="mt-1 text-2xl font-black">{peso(pendingCashIn)}</p>
+                </div>
+                <Badge value={loading ? "SYNCING" : "LIVE"} />
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section className="grid gap-5 pb-5 lg:grid-cols-[0.92fr_1.08fr]">
+          <section className="rounded-[2rem] border border-teal-100 bg-teal-50/75 p-5 shadow-sm lg:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-black text-slate-950">Official Cash-In Account</h2>
+                <p className="mt-1 text-sm text-slate-600">Send the payment first, then submit the amount and reference number on the right.</p>
+              </div>
+              <Badge value="OFFICIAL BDO" />
+            </div>
+            <div className="mt-5 grid gap-3">
+              <Info label="Payee" value={companyPaymentContact.payee} />
+              <Info label="Bank" value={companyPaymentContact.bank} />
+              <Info label="Account Name" value={companyPaymentContact.accountName} />
+              <Info label="Account Number" value={companyPaymentContact.accountNumber} />
+              <Info label="Email" value={companyPaymentContact.email} />
+            </div>
+            <div className="mt-4 grid gap-3">
+              <FlowStep title="1. Send Payment" text="Use the official BDO account shown here. Keep the receipt or transaction reference." />
+              <FlowStep title="2. Submit Reference" text="Enter the exact amount sent and the payment reference number for admin verification." />
+              <FlowStep title="3. Wait For Approval" text="Treasury verifies the receipt, credits your wallet, and records the internal percentage distribution." />
+            </div>
+          </section>
+
+          <section className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-black text-slate-950">Cash-In / Withdraw</h2>
+                <p className="mt-1 text-sm text-slate-600">Submit payments and payout requests from one wallet action center.</p>
+              </div>
+              <Badge value="WALLET ACTIONS" />
+            </div>
+            <div className="mt-5 grid gap-4 xl:grid-cols-2">
+              <div className="rounded-[1.5rem] border border-emerald-100 bg-emerald-50/70 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-black text-slate-950">Cash-In</h3>
+                    <p className="mt-1 text-xs font-bold leading-5 text-slate-600">Use after sending payment to the official account.</p>
+                  </div>
+                  <Badge value="TREASURY REVIEW" />
+                </div>
+                <div className="mt-4 grid gap-3">
+                  <input
+                    type="number"
+                    value={cashInAmount}
+                    onChange={(event) => setCashInAmount(event.target.value)}
+                    placeholder="Amount sent"
+                    className="rounded-2xl border border-emerald-100 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
+                  />
+                  <input
+                    value={cashInReference}
+                    onChange={(event) => setCashInReference(event.target.value)}
+                    placeholder="BDO receipt / payment reference number"
+                    className="rounded-2xl border border-emerald-100 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
+                  />
+                  <button
+                    onClick={submitCashIn}
+                    disabled={submittingCashIn || !profile}
+                    className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60"
+                  >
+                    {submittingCashIn ? "Submitting..." : "Submit Cash-In"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-[1.5rem] border border-amber-100 bg-amber-50/80 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-black text-slate-950">Withdraw</h3>
+                    <p className="mt-1 text-xs font-bold leading-5 text-slate-600">Choose a saved payout method or save one here.</p>
+                  </div>
+                  <Badge value={canWithdraw ? "READY" : "CHECK KYC"} />
+                </div>
+                <div className="mt-4 grid gap-3">
+                  <input
+                    type="number"
+                    value={withdrawAmount}
+                    onChange={(event) => setWithdrawAmount(event.target.value)}
+                    placeholder="Withdrawal amount"
+                    className="rounded-2xl border border-amber-100 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-amber-400"
+                  />
+                  {linkedAccounts.length > 0 && (
+                    <select
+                      value={selectedPayoutId}
+                      onChange={(event) => setSelectedPayoutId(event.target.value)}
+                      className="rounded-2xl border border-amber-100 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-amber-400"
+                    >
+                      {linkedAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.provider_name || account.account_type || "Payout"} - {account.account_number || "No account number"} ({account.status || "PENDING"})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <select
+                      value={payoutType}
+                      onChange={(event) => setPayoutType(event.target.value)}
+                      className="rounded-2xl border border-amber-100 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-amber-400"
+                    >
+                      <option value="BANK">Bank Account</option>
+                      <option value="GCASH">GCash</option>
+                      <option value="MAYA">Maya</option>
+                      <option value="OTHER">Other</option>
+                    </select>
+                    <input
+                      value={payoutProvider}
+                      onChange={(event) => setPayoutProvider(event.target.value)}
+                      placeholder="Bank / provider"
+                      className="rounded-2xl border border-amber-100 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-amber-400"
+                    />
+                  </div>
+                  <input
+                    value={payoutName}
+                    onChange={(event) => setPayoutName(event.target.value)}
+                    placeholder="Account name"
+                    className="rounded-2xl border border-amber-100 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-amber-400"
+                  />
+                  <input
+                    value={payoutNumber}
+                    onChange={(event) => setPayoutNumber(event.target.value)}
+                    placeholder="Account number / mobile number"
+                    className="rounded-2xl border border-amber-100 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-amber-400"
+                  />
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <button
+                      onClick={savePayoutMethod}
+                      disabled={savingPayout || !profile}
+                      className="rounded-2xl border border-amber-200 bg-white px-6 py-4 text-sm font-black text-amber-950 hover:bg-amber-100 disabled:opacity-60"
+                    >
+                      {savingPayout ? "Saving..." : "Save Method"}
+                    </button>
+                    <button
+                      onClick={submitWithdraw}
+                      disabled={submittingWithdraw || !profile}
+                      className="rounded-2xl bg-amber-400 px-6 py-4 text-sm font-black text-amber-950 hover:bg-amber-300 disabled:opacity-60"
+                    >
+                      {submittingWithdraw ? "Submitting..." : "Request Withdraw"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
+          <h2 className="text-2xl font-black text-slate-950">Transaction History</h2>
+          <div className="mt-5 grid gap-3">
+            {latestTransactions.length === 0 ? (
+              <Empty text="No wallet activity yet." />
             ) : (
-              linkedAccounts.map((account) => (
-                <div key={account.id} className="rounded-2xl border border-white/10 bg-black/25 p-5">
-                  <p className="text-lg font-black text-green-200">
-                    {account.provider_name || account.account_type || "Payout Account"}
-                  </p>
-                  <p className="mt-1 text-sm text-white/70">{account.account_name || "No account name"}</p>
-                  <p className="text-sm text-white/50">{account.account_number || "No account number"}</p>
-                  <span className={`mt-3 inline-flex rounded-full border px-3 py-1 text-xs font-black ${badgeClass(account.status)}`}>
-                    {account.status || "PENDING"}
-                  </span>
+              latestTransactions.map((transaction) => (
+                <div key={transaction.id} className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-black text-slate-950">{transaction.transaction_type || "Wallet transaction"}</p>
+                      <p className="mt-1 text-sm text-slate-600">{transaction.description || "-"}</p>
+                      <p className="mt-2 text-xs font-bold text-emerald-700">{formatDate(transaction.created_at)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-black text-slate-950">{peso(transaction.amount)}</p>
+                      <Badge value={transaction.status || "COMPLETED"} />
+                    </div>
+                  </div>
                 </div>
               ))
             )}
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
 
-      <section className="mx-auto grid max-w-7xl gap-6 px-6 pb-8 md:px-10 lg:grid-cols-2">
-        <div className="rounded-3xl border border-green-300/20 bg-green-400/[0.07] p-6 shadow-2xl">
-          <h2 className="text-3xl font-black">Submit Cash-In</h2>
-          <div className="mt-6 space-y-4">
-            <input type="number" value={cashInAmount} onChange={(event) => setCashInAmount(event.target.value)} placeholder="Amount" className="w-full rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            <input value={cashInReference} onChange={(event) => setCashInReference(event.target.value)} placeholder="Payment reference / receipt number" className="w-full rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            <button onClick={submitCashIn} disabled={submittingCashIn} className="w-full rounded-2xl bg-green-500 px-6 py-4 text-sm font-black text-green-950 hover:bg-green-400 disabled:cursor-not-allowed disabled:bg-slate-500">
-              {submittingCashIn ? "Submitting..." : "Submit Cash-In Request"}
-            </button>
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-yellow-300/20 bg-yellow-400/[0.07] p-6 shadow-2xl">
-          <h2 className="text-3xl font-black">Request Withdrawal</h2>
-          <div className="mt-6 space-y-4">
-            <input type="number" value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} placeholder="Amount" className="w-full rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            <button onClick={submitWithdraw} disabled={submittingWithdraw} className="w-full rounded-2xl bg-yellow-400 px-6 py-4 text-sm font-black text-yellow-950 hover:bg-yellow-300 disabled:cursor-not-allowed disabled:bg-slate-500">
-              {submittingWithdraw ? "Submitting..." : "Submit Withdrawal Request"}
-            </button>
-          </div>
-        </div>
-      </section>
     </main>
   );
 }
 
-function Metric({ title, value }: { title: string; value: string }) {
+const noticeStyles = {
+  success: "border-emerald-200 bg-emerald-50 text-emerald-900",
+  error: "border-red-200 bg-red-50 text-red-900",
+  info: "border-amber-200 bg-amber-50 text-amber-900",
+};
+
+function HeroStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-5 shadow-2xl">
-      <p className="text-xs font-black uppercase tracking-wide text-green-100/60">{title}</p>
-      <p className="mt-3 text-2xl font-black text-green-300">{value}</p>
+    <div className="rounded-2xl border border-white/20 bg-white/16 p-4 backdrop-blur">
+      <p className="text-xs font-black uppercase tracking-wide text-white/65">{label}</p>
+      <p className="mt-2 truncate text-2xl font-black text-white">{value}</p>
     </div>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function WalletAction({ label, detail }: { label: string; detail: string }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl bg-black/25 px-4 py-3">
-      <p className="text-xs font-bold text-white/50">{label}</p>
-      <p className="text-right text-sm font-black text-white">{value}</p>
+    <div className="rounded-2xl border border-white/20 bg-white/14 p-4 backdrop-blur">
+      <p className="text-sm font-black text-white">{label}</p>
+      <p className="mt-1 truncate text-xs font-bold text-white/65">{detail}</p>
+    </div>
+  );
+}
+
+function FlowStep({ title, text }: { title: string; text: string }) {
+  return (
+    <div className="rounded-2xl border border-white bg-white/75 p-4">
+      <p className="text-sm font-black text-slate-950">{title}</p>
+      <p className="mt-2 text-sm leading-6 text-slate-600">{text}</p>
+    </div>
+  );
+}
+
+function Badge({ value }: { value: string }) {
+  const status = normalize(value);
+  const style = status.includes("APPROVED") || status.includes("ACTIVE") || status.includes("READY") || status.includes("COMPLETED")
+    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+    : status.includes("REJECTED") || status.includes("FAILED") || status.includes("SUSPENDED")
+      ? "border-red-200 bg-red-50 text-red-800"
+      : "border-amber-200 bg-amber-50 text-amber-800";
+
+  return <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-black ${style}`}>{value}</span>;
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-2 break-words text-sm font-black text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function Empty({ text }: { text: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 p-5 text-sm font-bold text-slate-500">
+      {text}
     </div>
   );
 }

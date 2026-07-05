@@ -46,6 +46,7 @@ export default function PlantationPage() {
           <div className="flex flex-wrap gap-3">
             <Link href="/investor/dashboard" className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-sm font-black">Dashboard</Link>
             <Link href="/tree" className="rounded-2xl bg-green-500 px-5 py-3 text-sm font-black text-green-950">Tree Registry</Link>
+            <Link href="/legalities" className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-green-950">Legalities</Link>
           </div>
         </div>
 
@@ -80,6 +81,15 @@ export default function PlantationPage() {
 
         <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
           <h2 className="text-3xl font-black">Legal / DENR Documents</h2>
+          <div className="mt-5 rounded-3xl border border-green-300/20 bg-green-400/10 p-5">
+            <p className="text-xl font-black text-green-100">Company Profile Legalities</p>
+            <p className="mt-2 text-sm leading-6 text-white/70">
+              View the app-organized permits, licenses, MOA, lease, SEC files, and certificate references from Company Profile pages 57 to 78.
+            </p>
+            <Link href="/legalities" className="mt-4 inline-flex rounded-2xl bg-green-400 px-5 py-3 text-sm font-black text-green-950">
+              Open Legalities Library
+            </Link>
+          </div>
           <div className="mt-6 space-y-3">
             {licenses.length === 0 ? (
               <Empty text="No visible legal documents yet." />

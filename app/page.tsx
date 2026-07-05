@@ -73,7 +73,7 @@ export default function Home() {
                 SUR ALOESWOOD
               </h1>
               <p className="text-sm font-semibold text-green-700">
-                Fintech Co-Planter Platform
+                Co-Planter Management Platform
               </p>
             </div>
           </div>
@@ -99,20 +99,20 @@ export default function Home() {
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-green-200 bg-white/80 px-5 py-2 text-sm font-bold text-green-700 shadow-sm backdrop-blur">
               <span className="h-2 w-2 rounded-full bg-green-500" />
-              Since 2024 • Sustainable Agarwood Ownership
+              Sustainable Agarwood Plantation Management
             </div>
 
             <h2 className="mt-8 text-5xl font-black leading-tight text-blue-950 lg:text-7xl">
-              Grow Wealth Through
+              Manage Your
               <span className="block bg-gradient-to-r from-green-600 to-blue-700 bg-clip-text text-transparent">
-                Digital Tree Ownership
+                Agarwood Co-Planting
               </span>
             </h2>
 
             <p className="mt-7 max-w-xl text-lg leading-8 text-slate-600">
-              Invest, monitor, and manage Agarwood trees through a premium
+              Register, monitor, and manage Agarwood co-planting records through a premium
               digital platform with QR Tree Passport, GPS tracking, farm
-              reports, wallet, marketplace, and harvest monitoring.
+              reports, wallet records, marketplace access, and harvest updates.
             </p>
 
             <div className="mt-9 flex flex-wrap gap-4">
@@ -127,7 +127,7 @@ export default function Home() {
                 href="/login"
                 className="rounded-2xl border border-blue-800 bg-white px-8 py-4 text-lg font-black text-blue-900 shadow-lg hover:bg-blue-50"
               >
-                Investor Login
+                Co-Planter Login
               </Link>
             </div>
 
@@ -141,8 +141,8 @@ export default function Home() {
                 <p className="mt-1 text-sm text-slate-500">Farm Tracking</p>
               </div>
               <div className="rounded-2xl border border-white bg-white/70 p-4 shadow-sm backdrop-blur">
-                <p className="text-2xl font-black text-yellow-600">70%</p>
-                <p className="mt-1 text-sm text-slate-500">Harvest Share</p>
+                <p className="text-2xl font-black text-yellow-600">Share</p>
+                <p className="mt-1 text-sm text-slate-500">Harvest Terms</p>
               </div>
             </div>
           </div>
@@ -177,8 +177,8 @@ export default function Home() {
                     <p className="font-bold">3 Months</p>
                   </div>
                   <div className="rounded-2xl bg-white/15 p-4">
-                    <p className="text-sm text-green-100">Current Value</p>
-                    <p className="font-bold">₱7,500</p>
+                    <p className="text-sm text-green-100">Record Status</p>
+                    <p className="font-bold">Monitored</p>
                   </div>
                   <div className="rounded-2xl bg-white/15 p-4">
                     <p className="text-sm text-green-100">Harvest</p>
@@ -191,28 +191,28 @@ export default function Home() {
                 <div className="rounded-3xl bg-green-50 p-5">
                   <p className="text-sm text-slate-500">Trees Registered</p>
                   <h4 className="mt-2 text-4xl font-black text-green-700">
-                    12,450
+                    Verified
                   </h4>
                 </div>
 
                 <div className="rounded-3xl bg-blue-50 p-5">
-                  <p className="text-sm text-slate-500">Active Investors</p>
+                  <p className="text-sm text-slate-500">Active Co-Planters</p>
                   <h4 className="mt-2 text-4xl font-black text-blue-700">
-                    2,140
+                    Managed
                   </h4>
                 </div>
 
                 <div className="rounded-3xl bg-yellow-50 p-5">
                   <p className="text-sm text-slate-500">Managed Farms</p>
                   <h4 className="mt-2 text-4xl font-black text-yellow-600">
-                    18
+                    Active
                   </h4>
                 </div>
 
                 <div className="rounded-3xl bg-purple-50 p-5">
                   <p className="text-sm text-slate-500">Harvest Cycle</p>
                   <h4 className="mt-2 text-4xl font-black text-purple-700">
-                    5-7Y
+                    Cycle
                   </h4>
                 </div>
               </div>

@@ -1,4 +1,5 @@
 export type AnyRow = Record<string, any>;
+import { COPLANTER_PACKAGE_PRICE, peso as businessPeso } from "@/app/lib/business/rules";
 
 export const peso = (value: any) =>
   `₱${Number(value || 0).toLocaleString("en-PH", {
@@ -55,13 +56,18 @@ export const adminLinks = [
 ];
 
 export const investorLinks = [
-  { href: "/investor/marketplace", title: "Buy Seedlings", desc: "Purchase ₱14,000 AG seedlings" },
+  {
+    href: "/investor/marketplace",
+    title: "Buy Co-Planter Package",
+    desc: `Purchase ${businessPeso(COPLANTER_PACKAGE_PRICE)} AG co-planter packages`,
+  },
   { href: "/investor/my-trees", title: "My AG Trees", desc: "AG codes, DENR tags, GPS and photos" },
   { href: "/tree", title: "Tree Registry", desc: "Public tree portfolio view" },
   { href: "/investor/timeline", title: "Timeline", desc: "Growth and plantation timeline" },
   { href: "/certificates", title: "Certificates", desc: "Certificate preview cards" },
   { href: "/harvest", title: "Harvest", desc: "Harvest readiness and estimates" },
   { href: "/plantation", title: "Plantation", desc: "Farms and legal documents" },
+  { href: "/legalities", title: "Legalities", desc: "Permits, licenses, MOA and certificates" },
   { href: "/investor/wallet", title: "Wallet", desc: "Balance, cash-in, transactions" },
   { href: "/investor/referrals", title: "Referrals", desc: "Referral link and bonuses" },
   { href: "/investor/recovery", title: "Recovery Fund", desc: "Recovery fund ledger" },

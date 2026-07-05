@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
 import { formatDate, getProfile, peso, profileName, statusClass, type AnyRow } from "@/app/lib/admin/approvals";
+import { calculateDistribution } from "@/app/lib/finance/fee-distribution";
 
 export default function AdminTreasuryPage() {
   const [profiles, setProfiles] = useState<AnyRow[]>([]);
@@ -40,7 +42,7 @@ export default function AdminTreasuryPage() {
     setWallets((walletRows || []) as AnyRow[]);
     setCashins(safeCashins);
     setTransactions((txRows || []) as AnyRow[]);
-    setSelected(safeCashins[0] || null);
+    setSelected((current) => safeCashins.find((row) => row.id === current?.id) || safeCashins[0] || null);
   }
 
   function walletFor(profileId?: string) {
@@ -63,10 +65,7 @@ export default function AdminTreasuryPage() {
     if (!wallet) {
       const { data: createdWallet, error: walletCreateError } = await supabase
         .from("wallets")
-        .insert({
-          profile_id: row.profile_id,
-          balance: 0,
-        })
+        .insert({ profile_id: row.profile_id, balance: 0 })
         .select("id, profile_id, balance, updated_at")
         .maybeSingle();
 
@@ -80,22 +79,17 @@ export default function AdminTreasuryPage() {
     }
 
     const walletId = wallet?.id;
+    if (!walletId) {
+      setMessage("Wallet not found.");
+      setBusyId("");
+      return;
+    }
 
-if (!walletId) {
-  setMessage("Wallet not found.");
-  setBusyId("");
-  return;
-}
-
-const newBalance = Number(wallet?.balance || 0) + amount;
-
-const { error: walletError } = await supabase
-  .from("wallets")
-  .update({
-    balance: newBalance,
-    updated_at: new Date().toISOString(),
-  })
-  .eq("id", walletId);
+    const newBalance = Number(wallet?.balance || 0) + amount;
+    const { error: walletError } = await supabase
+      .from("wallets")
+      .update({ balance: newBalance, updated_at: new Date().toISOString() })
+      .eq("id", walletId);
 
     if (walletError) {
       setMessage(walletError.message);
@@ -103,20 +97,28 @@ const { error: walletError } = await supabase
       return;
     }
 
-    await supabase
-      .from("profiles")
-      .update({
-        wallet_balance: newBalance,
-      })
-      .eq("id", row.profile_id);
+    await supabase.from("profiles").update({ wallet_balance: newBalance }).eq("id", row.profile_id);
 
-    const { error: txError } = await supabase.from("wallet_transactions").insert({
-      profile_id: row.profile_id,
-      transaction_type: "CASH_IN",
-      amount,
-      description: row.description || `Cash-in approved: ${row.reference_no || row.id}`,
-      status: "APPROVED",
-    });
+    const distribution = calculateDistribution("COPLANTER_PACKAGE", amount);
+    const reference = row.reference_no || row.id;
+    const ledgerRows = [
+      {
+        profile_id: row.profile_id,
+        transaction_type: "CASH_IN",
+        amount,
+        description: row.description || `Cash-in approved: ${reference}. Co-planter package distribution ledger recorded for admin settlement.`,
+        status: "APPROVED",
+      },
+      ...distribution.shares.map((share) => ({
+        profile_id: row.profile_id,
+        transaction_type: "PACKAGE_DISTRIBUTION_LEDGER",
+        amount: share.amount,
+        description: `${distribution.rule.label} share ${share.percent}% for ${share.recipient}. Settle to ${share.accountProvider} - ${share.accountName} - ${share.accountNumber}. Reference: ${reference}.`,
+        status: "APPROVED",
+      })),
+    ];
+
+    const { error: txError } = await supabase.from("wallet_transactions").insert(ledgerRows);
 
     if (txError) {
       setMessage(txError.message);
@@ -124,12 +126,7 @@ const { error: walletError } = await supabase
       return;
     }
 
-    const { error: cashinError } = await supabase
-      .from("cashin_requests")
-      .update({
-        status: "APPROVED",
-      })
-      .eq("id", row.id);
+    const { error: cashinError } = await supabase.from("cashin_requests").update({ status: "APPROVED" }).eq("id", row.id);
 
     if (cashinError) {
       setMessage(cashinError.message);
@@ -144,7 +141,7 @@ const { error: walletError } = await supabase
       is_read: false,
     });
 
-    setMessage("Cash-in approved and wallet credited.");
+    setMessage("Cash-in approved, wallet credited, and co-planter package distribution ledger recorded for admin settlement.");
     await loadTreasury();
     setBusyId("");
   }
@@ -153,12 +150,7 @@ const { error: walletError } = await supabase
     setBusyId(row.id);
     setMessage("");
 
-    const { error } = await supabase
-      .from("cashin_requests")
-      .update({
-        status: "REJECTED",
-      })
-      .eq("id", row.id);
+    const { error } = await supabase.from("cashin_requests").update({ status: "REJECTED" }).eq("id", row.id);
 
     if (error) {
       setMessage(error.message);
@@ -194,151 +186,221 @@ const { error: walletError } = await supabase
   const approvedCashinTotal = cashins.filter((row) => String(row.status || "").toUpperCase() === "APPROVED").reduce((sum, row) => sum + Number(row.amount || 0), 0);
   const selectedProfile = selected ? getProfile(selected.profile_id, profiles) : null;
   const selectedWallet = selected ? walletFor(selected.profile_id) : null;
+  const selectedDistribution = selected ? calculateDistribution("COPLANTER_PACKAGE", Number(selected.amount || 0)) : null;
 
   return (
-    <main className="min-h-screen bg-[#04140d] text-white">
-      <section className="border-b border-white/10 px-6 py-8 md:px-10">
-        <div className="mx-auto max-w-7xl">
-          <div className="flex flex-wrap items-start justify-between gap-5">
+    <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
+      <div className="mx-auto w-full max-w-[1500px] px-4 py-4 lg:px-6">
+        <section className="relative overflow-hidden rounded-[2rem] border border-white/20 p-6 shadow-sm lg:p-8">
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/forest-bg.jpg')" }} />
+          <div className="absolute inset-0 bg-gradient-to-r from-green-950/90 via-green-900/66 to-green-950/18" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/10" />
+
+          <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.35em] text-green-300">SUR ALOESWOOD ADMIN</p>
-              <h1 className="mt-4 text-4xl font-black md:text-6xl">Treasury Center</h1>
-              <p className="mt-4 max-w-3xl text-sm leading-7 text-green-50/80">
-                Approve co-planter cash-in requests, credit wallets, and monitor wallet transactions.
+              <p className="text-xs font-black uppercase tracking-[0.32em] text-white/75">SUR Aloeswood Admin</p>
+              <h1 className="mt-4 max-w-3xl text-4xl font-black leading-tight text-white lg:text-6xl">
+                Treasury Center
+              </h1>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-white/78 lg:text-base">
+                Verify real bank or e-wallet payments sent to the owner's approved account, then record wallet credit and automatic SUR/TDI ledger allocation.
               </p>
             </div>
 
-            <button onClick={loadTreasury} className="rounded-2xl bg-green-500 px-5 py-3 text-sm font-black text-green-950">
-              Refresh
-            </button>
-          </div>
-
-          {message && <div className="mt-4 rounded-2xl border border-yellow-300/30 bg-yellow-400/15 px-5 py-4 text-sm font-bold text-yellow-100">{message}</div>}
-        </div>
-      </section>
-
-      <section className="mx-auto grid max-w-7xl gap-5 px-6 py-8 md:grid-cols-4 md:px-10">
-        <Metric title="Wallet Balances" value={peso(walletTotal)} />
-        <Metric title="Pending Cash-In" value={peso(pendingTotal)} />
-        <Metric title="Approved Cash-In" value={peso(approvedCashinTotal)} />
-        <Metric title="Wallet TX" value={String(transactions.length)} />
-      </section>
-
-      <section className="mx-auto grid max-w-7xl gap-6 px-6 pb-16 md:px-10 lg:grid-cols-[0.9fr_1.1fr]">
-        <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-3xl font-black">Cash-In Requests</h2>
             <div className="flex flex-wrap gap-3">
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search..." className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none" />
-              <select value={filter} onChange={(e) => setFilter(e.target.value)} className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none">
-                <option value="ALL">All</option>
-                <option value="PENDING">Pending</option>
-                <option value="APPROVED">Approved</option>
-                <option value="REJECTED">Rejected</option>
-              </select>
+              <button onClick={loadTreasury} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 shadow-sm hover:bg-white/90">
+                Refresh
+              </button>
+              <Link href="/admin/dashboard" className="rounded-2xl border border-white/25 bg-white/15 px-5 py-3 text-sm font-black text-white backdrop-blur hover:bg-white/20">
+                Dashboard
+              </Link>
             </div>
           </div>
 
-          <div className="mt-6 space-y-3">
-            {filtered.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-black/25 p-6 text-sm font-bold text-white/60">No cash-in requests found.</div>
-            ) : filtered.map((row) => {
-              const profile = getProfile(row.profile_id, profiles);
-
-              return (
-                <button key={row.id} onClick={() => setSelected(row)} className={`w-full rounded-2xl border p-5 text-left ${selected?.id === row.id ? "border-green-300 bg-green-400/15" : "border-white/10 bg-black/25"}`}>
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-lg font-black text-green-200">{profileName(profile)}</p>
-                      <p className="mt-1 text-sm text-white/60">{profile?.email || "-"}</p>
-                      <p className="mt-1 text-xs text-white/45">Ref: {row.reference_no || "-"}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-lg font-black text-green-300">{peso(row.amount)}</p>
-                      <span className={`mt-2 inline-flex rounded-full border px-3 py-1 text-xs font-black ${statusClass(row.status)}`}>{row.status || "PENDING"}</span>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
+          <div className="relative z-10 mt-8 grid gap-3 md:grid-cols-4">
+            <HeroStat label="Wallet Balances" value={peso(walletTotal)} />
+            <HeroStat label="Pending Cash-In" value={peso(pendingTotal)} />
+            <HeroStat label="Approved Cash-In" value={peso(approvedCashinTotal)} />
+            <HeroStat label="Wallet TX" value={String(transactions.length)} />
           </div>
-        </div>
 
-        <div className="space-y-6">
-          <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
-            <h2 className="text-3xl font-black">Cash-In Detail</h2>
+          {message && (
+            <div className="relative z-10 mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-900">
+              {message}
+            </div>
+          )}
 
-            {!selected ? (
-              <div className="mt-6 rounded-2xl border border-dashed border-white/10 bg-black/25 p-6 text-sm font-bold text-white/60">Select cash-in request.</div>
-            ) : (
-              <>
-                <div className="mt-6 grid gap-3 md:grid-cols-2">
-                  <Info label="Co-Planter" value={profileName(selectedProfile)} />
-                  <Info label="Email" value={selectedProfile?.email || "-"} />
-                  <Info label="Amount" value={peso(selected.amount)} />
-                  <Info label="Reference" value={selected.reference_no || "-"} />
-                  <Info label="Status" value={selected.status || "PENDING"} />
+          <div className="relative z-10 mt-5 rounded-2xl border border-white/20 bg-white/15 px-5 py-4 text-sm font-bold leading-7 text-white/82 backdrop-blur">
+            This platform is a ledger and approval system. Real funds are sent manually through the owner's confirmed bank or e-wallet account. Once admin verifies payment, the app records wallet credit and the co-planter package split for admin settlement.
+          </div>
+        </section>
+
+        <section className="grid gap-5 py-5 lg:grid-cols-[0.95fr_1.05fr]">
+          <section className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-2xl font-black text-slate-950">Cash-In Requests</h2>
+                <p className="mt-1 text-sm text-slate-600">Customer already paid through the real owner bank/e-wallet. Select a request to verify the receipt and record the ledger.</p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search" className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
+                <select value={filter} onChange={(event) => setFilter(event.target.value)} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400">
+                  <option value="ALL">All</option>
+                  <option value="PENDING">Pending</option>
+                  <option value="APPROVED">Approved</option>
+                  <option value="REJECTED">Rejected</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              {filtered.length === 0 ? (
+                <Empty text="No cash-in requests found." />
+              ) : (
+                filtered.map((row) => {
+                  const profile = getProfile(row.profile_id, profiles);
+                  return (
+                    <button
+                      key={row.id}
+                      onClick={() => setSelected(row)}
+                      className={`w-full rounded-2xl border p-5 text-left transition ${
+                        selected?.id === row.id ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-slate-50 hover:border-emerald-200"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-lg font-black text-slate-950">{profileName(profile)}</p>
+                          <p className="mt-1 text-sm font-bold text-slate-600">{profile?.email || "-"}</p>
+                          <p className="mt-1 text-xs font-bold text-slate-400">Ref: {row.reference_no || "-"}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-lg font-black text-emerald-700">{peso(row.amount)}</p>
+                          <span className={`mt-2 inline-flex rounded-full border px-3 py-1 text-xs font-black ${statusClass(row.status)}`}>
+                            {row.status || "PENDING"}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </section>
+
+          <section className="space-y-5">
+            <div className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
+              <h2 className="text-2xl font-black text-slate-950">Cash-In Detail</h2>
+
+              {!selected ? (
+                <div className="mt-5"><Empty text="Select cash-in request." /></div>
+              ) : (
+                <>
+                <div className="mt-5 grid gap-3 md:grid-cols-2">
+                    <Info label="Co-Planter" value={profileName(selectedProfile)} />
+                    <Info label="Email" value={selectedProfile?.email || "-"} />
+                    <Info label="Amount" value={peso(selected.amount)} />
+                    <Info label="Reference" value={selected.reference_no || "-"} />
+                    <Info label="Status" value={selected.status || "PENDING"} />
                   <Info label="Wallet Before" value={peso(selectedWallet?.balance)} />
                   <Info label="Description" value={selected.description || "-"} />
                   <Info label="Created" value={formatDate(selected.created_at)} />
                 </div>
 
-                <div className="mt-6 grid gap-3 md:grid-cols-2">
-                  <button disabled={busyId === selected.id || String(selected.status || "").toUpperCase() === "APPROVED"} onClick={() => approveCashin(selected)} className="rounded-2xl bg-green-500 px-6 py-4 text-sm font-black text-green-950 disabled:bg-slate-500">
-                    Approve + Credit Wallet
-                  </button>
-                  <button disabled={busyId === selected.id || String(selected.status || "").toUpperCase() === "APPROVED"} onClick={() => rejectCashin(selected)} className="rounded-2xl bg-red-500 px-6 py-4 text-sm font-black text-white disabled:bg-slate-500">
-                    Reject Cash-In
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-
-          <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
-            <h2 className="text-3xl font-black">Recent Wallet Transactions</h2>
-            <div className="mt-5 space-y-3">
-              {transactions.slice(0, 8).map((tx) => {
-                const profile = getProfile(tx.profile_id, profiles);
-                return (
-                  <div key={tx.id} className="rounded-2xl bg-black/25 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-black text-green-200">{tx.transaction_type}</p>
-                        <p className="text-sm text-white/60">{profileName(profile)}</p>
-                        <p className="text-xs text-white/45">{tx.description || "-"}</p>
+                <div className="mt-5 rounded-3xl border border-amber-100 bg-amber-50/80 p-4">
+                  <p className="text-sm font-black text-slate-950">Co-Planter Package Distribution</p>
+                  <p className="mt-1 text-xs font-bold leading-6 text-slate-600">
+                    Approval credits the customer wallet and records the admin settlement split. Real transfers remain manual until gateway split payout is configured.
+                  </p>
+                  <div className="mt-4 grid gap-3">
+                    {selectedDistribution?.shares.map((share) => (
+                      <div key={`${share.recipient}-${share.percent}`} className="rounded-2xl border border-amber-100 bg-white p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-black text-slate-950">{share.recipient}</p>
+                            <p className="mt-1 text-xs font-bold text-slate-500">
+                              {share.accountProvider} - {share.accountName} - {share.accountNumber}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-black text-amber-700">{share.percent}%</p>
+                            <p className="mt-1 text-sm font-black text-slate-950">{peso(share.amount)}</p>
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-black text-green-300">{peso(tx.amount)}</p>
-                        <span className={`mt-2 inline-flex rounded-full border px-3 py-1 text-xs font-black ${statusClass(tx.status)}`}>{tx.status || "APPROVED"}</span>
-                      </div>
-                    </div>
+                    ))}
                   </div>
-                );
-              })}
-              {transactions.length === 0 && <div className="rounded-2xl border border-dashed border-white/10 bg-black/25 p-6 text-sm font-bold text-white/60">No transactions yet.</div>}
+                </div>
+
+                <div className="mt-5 grid gap-3 md:grid-cols-2">
+                    <button disabled={busyId === selected.id || String(selected.status || "").toUpperCase() === "APPROVED"} onClick={() => approveCashin(selected)} className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60">
+                      Approve + Credit Wallet
+                    </button>
+                    <button disabled={busyId === selected.id || String(selected.status || "").toUpperCase() === "APPROVED"} onClick={() => rejectCashin(selected)} className="rounded-2xl bg-red-600 px-6 py-4 text-sm font-black text-white hover:bg-red-700 disabled:opacity-60">
+                      Reject Cash-In
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
-          </div>
-        </div>
-      </section>
+
+            <div className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
+              <h2 className="text-2xl font-black text-slate-950">Recent Wallet Transactions</h2>
+              <div className="mt-5 space-y-3">
+                {transactions.length === 0 ? (
+                  <Empty text="No transactions yet." />
+                ) : (
+                  transactions.slice(0, 8).map((tx) => {
+                    const profile = getProfile(tx.profile_id, profiles);
+                    return (
+                      <div key={tx.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-black text-slate-950">{tx.transaction_type}</p>
+                            <p className="text-sm font-bold text-slate-500">{profileName(profile)}</p>
+                            <p className="text-xs text-slate-500">{tx.description || "-"}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-black text-emerald-700">{peso(tx.amount)}</p>
+                            <span className={`mt-2 inline-flex rounded-full border px-3 py-1 text-xs font-black ${statusClass(tx.status)}`}>
+                              {tx.status || "APPROVED"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </section>
+        </section>
+      </div>
     </main>
   );
 }
 
-function Metric({ title, value }: { title: string; value: string }) {
+function HeroStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-5 shadow-2xl">
-      <p className="text-xs font-black uppercase tracking-wide text-green-100/60">{title}</p>
-      <p className="mt-3 truncate text-2xl font-black text-green-300">{value}</p>
+    <div className="rounded-2xl border border-white/20 bg-white/16 p-4 backdrop-blur">
+      <p className="text-xs font-black uppercase tracking-wide text-white/65">{label}</p>
+      <p className="mt-2 truncate text-2xl font-black text-white">{value}</p>
     </div>
   );
 }
 
 function Info({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-black/25 p-4">
-      <p className="text-xs font-bold uppercase tracking-wide text-white/45">{label}</p>
-      <p className="mt-2 break-words text-sm font-black text-white">{value}</p>
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-2 break-words text-sm font-black text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function Empty({ text }: { text: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm font-bold text-slate-500">
+      {text}
     </div>
   );
 }

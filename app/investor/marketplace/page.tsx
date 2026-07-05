@@ -1,37 +1,60 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
+import {
+  ANNUAL_MAINTENANCE_FEE,
+  COPLANTER_PACKAGE_PRICE,
+  MAINTENANCE_YEARS,
+  PROJECTED_TARGET_VALUE,
+  peso,
+  platformMoneyNotice,
+  projectionDisclaimer,
+} from "@/app/lib/business/rules";
 
-const PACKAGES = [
-  { qty: 1, price: 14000 },
-  { qty: 5, price: 70000 },
-  { qty: 10, price: 140000 },
-  { qty: 25, price: 350000 },
-  { qty: 50, price: 700000 },
-  { qty: 100, price: 1400000 },
-];
+const SEEDLING_PRODUCT = {
+  name: "Aquilaria Malaccensis",
+  species: "Aquilaria Malaccensis",
+  quantity: 1,
+  price: COPLANTER_PACKAGE_PRICE,
+  description: "Official SUR agarwood seedling for AG tree registration, DENR tagging, GPS records, certificate flow, and plantation monitoring.",
+};
 
 type Row = Record<string, any>;
 
-const peso = (v: any) =>
-  `₱${Number(v || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function statusClass(status?: string | null) {
+  const value = String(status || "").toUpperCase();
+
+  if (["APPROVED", "PAID", "COMPLETED"].includes(value)) {
+    return "border-emerald-300/30 bg-emerald-400/15 text-emerald-100";
+  }
+
+  if (["REJECTED", "FAILED", "CANCELLED"].includes(value)) {
+    return "border-red-300/30 bg-red-400/15 text-red-100";
+  }
+
+  return "border-yellow-300/30 bg-yellow-400/15 text-yellow-100";
+}
 
 export default function InvestorMarketplacePage() {
   const [email, setEmail] = useState("");
   const [profile, setProfile] = useState<Row | null>(null);
   const [wallet, setWallet] = useState<Row | null>(null);
   const [purchases, setPurchases] = useState<Row[]>([]);
-  const [selected, setSelected] = useState(PACKAGES[0]);
-  const [reference, setReference] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const walletBalance = Number(wallet?.balance || 0);
+  const canPayFromWallet = walletBalance >= SEEDLING_PRODUCT.price;
 
   useEffect(() => {
     const saved = localStorage.getItem("sur_login_email") || "";
     setEmail(saved);
     if (saved) loadAccount(saved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadAccount(targetEmail = email) {
@@ -40,7 +63,7 @@ export default function InvestorMarketplacePage() {
 
     const cleanEmail = targetEmail.toLowerCase().trim();
     if (!cleanEmail) {
-      setMessage("Enter registered email.");
+      setMessage("Login first to load your co-planter account.");
       setLoading(false);
       return;
     }
@@ -88,57 +111,13 @@ export default function InvestorMarketplacePage() {
     setLoading(false);
   }
 
-  async function submitForApproval() {
-    if (!profile) {
-      setMessage("Load profile first.");
-      return;
-    }
-
-    if (!reference.trim()) {
-      setMessage("Enter payment reference.");
-      return;
-    }
-
-    setLoading(true);
-    setMessage("");
-
-    const { error } = await supabase.from("seedling_purchases").insert({
-      profile_id: profile.id,
-      quantity: selected.qty,
-      amount: selected.price,
-      total_amount: selected.price,
-      payment_reference: reference.trim(),
-      status: "PENDING",
-    });
-
-    if (error) {
-      setMessage(error.message);
-      setLoading(false);
-      return;
-    }
-
-    await supabase.from("wallet_transactions").insert({
-      profile_id: profile.id,
-      transaction_type: "SEEDLING_PURCHASE_REQUEST",
-      amount: selected.price,
-      description: `${selected.qty} seedling purchase submitted. Reference: ${reference.trim()}`,
-      status: "PENDING",
-    });
-
-    setReference("");
-    setMessage("Purchase submitted for admin approval.");
-    await loadAccount(profile.email || email);
-    setLoading(false);
-  }
-
   async function payFromWallet() {
     if (!profile || !wallet) {
       setMessage("Load wallet first.");
       return;
     }
 
-    const balance = Number(wallet.balance || 0);
-    if (balance < selected.price) {
+    if (!canPayFromWallet) {
       setMessage("Insufficient wallet balance.");
       return;
     }
@@ -146,113 +125,247 @@ export default function InvestorMarketplacePage() {
     setLoading(true);
     setMessage("");
 
-    const { error: walletError } = await supabase
-      .from("wallets")
-      .update({ balance: balance - selected.price, updated_at: new Date().toISOString() })
-      .eq("profile_id", profile.id);
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
 
-    if (walletError) {
-      setMessage(walletError.message);
+    if (!accessToken) {
+      setMessage("Please login again before buying a seedling.");
       setLoading(false);
       return;
     }
 
-    const { error: purchaseError } = await supabase.from("seedling_purchases").insert({
-      profile_id: profile.id,
-      quantity: selected.qty,
-      amount: selected.price,
-      total_amount: selected.price,
-      payment_reference: `WALLET-${Date.now()}`,
-      status: "PAID",
+    const response = await fetch("/api/investor/buy-seedling", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
     });
+    const result = await response.json();
 
-    if (purchaseError) {
-      setMessage(purchaseError.message);
+    if (!response.ok) {
+      setMessage(result.error || "Unable to complete wallet purchase.");
       setLoading(false);
       return;
     }
 
-    await supabase.from("wallet_transactions").insert({
-      profile_id: profile.id,
-      transaction_type: "SEEDLING_PURCHASE",
-      amount: selected.price,
-      description: `${selected.qty} seedling purchase paid from wallet.`,
-      status: "PAID",
-    });
-
-    setMessage("Purchase paid from wallet.");
+    setMessage(result.message || "Seedling paid from wallet. Waiting for admin AG tree approval.");
     await loadAccount(profile.email || email);
     setLoading(false);
   }
 
   return (
-    <main className="min-h-screen bg-[#04140d] text-white">
-      <section className="border-b border-white/10 px-6 py-8 md:px-10">
-        <div className="mx-auto max-w-7xl">
-          <div className="flex flex-wrap items-start justify-between gap-5">
+    <main className="min-h-screen bg-[#03110b] text-white">
+      <section className="relative overflow-hidden border-b border-white/10">
+        <div
+          className="absolute inset-0 bg-cover bg-center opacity-30"
+          style={{ backgroundImage: "url('/forest-bg.jpg')" }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-[#03110b] via-[#062416]/95 to-[#0b1f18]/80" />
+
+        <div className="relative mx-auto max-w-7xl px-6 py-8 md:px-10 lg:py-12">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.35em] text-green-300">SUR ALOESWOOD MARKETPLACE</p>
-              <h1 className="mt-4 text-4xl font-black md:text-6xl">Buy Seedlings</h1>
+              <p className="text-xs font-black uppercase tracking-[0.35em] text-emerald-300">
+                SUR ALOESWOOD MARKETPLACE
+              </p>
+              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-6xl">
+                Aquilaria Malaccensis Marketplace
+              </h1>
             </div>
-            <div className="flex gap-3">
-              <Link href="/investor/dashboard" className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-sm font-black">Dashboard</Link>
-              <Link href="/investor/wallet" className="rounded-2xl bg-green-500 px-5 py-3 text-sm font-black text-green-950">Wallet</Link>
+
+            <div className="flex flex-wrap gap-3">
+              <Link href="/investor/dashboard" className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-sm font-black hover:bg-white/15">
+                Dashboard
+              </Link>
+              <Link href="/investor/wallet" className="rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-black text-emerald-950 hover:bg-emerald-300">
+                Wallet
+              </Link>
             </div>
           </div>
 
-          <div className="mt-8 grid gap-3 rounded-3xl border border-white/10 bg-white/10 p-4 md:grid-cols-[1fr_auto]">
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Registered email" className="w-full rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            <button onClick={() => loadAccount()} disabled={loading} className="rounded-2xl bg-green-500 px-8 py-4 text-sm font-black text-green-950 disabled:bg-slate-500">{loading ? "Loading..." : "Load"}</button>
-          </div>
+          <div className="mt-10 grid gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-stretch">
+            <div className="rounded-[2rem] border border-white/10 bg-white/[0.08] p-6 shadow-2xl backdrop-blur">
+              <p className="text-sm font-bold uppercase tracking-[0.2em] text-yellow-200">
+                Official Seedling
+              </p>
+              <p className="mt-4 max-w-3xl text-lg leading-8 text-emerald-50/85">
+                SUR currently sells one agarwood species in the investor app: Aquilaria Malaccensis. Purchases are paid using wallet balance only, then admin proceeds with AG tree registration and plantation records.
+              </p>
 
-          {message && <div className="mt-4 rounded-2xl border border-yellow-300/30 bg-yellow-400/15 px-5 py-4 text-sm font-bold text-yellow-100">{message}</div>}
+              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                <Metric label="Seedling Price" value={peso(SEEDLING_PRODUCT.price)} />
+                <Metric label="Target Scenario" value={peso(PROJECTED_TARGET_VALUE)} />
+                <Metric label="Maintenance" value={`${peso(ANNUAL_MAINTENANCE_FEE)} / year`} />
+              </div>
+
+              {message && (
+                <div className="mt-4 rounded-2xl border border-yellow-300/30 bg-yellow-400/15 px-5 py-4 text-sm font-bold text-yellow-100">
+                  {message}
+                </div>
+              )}
+            </div>
+
+            <div className="relative overflow-hidden rounded-[2rem] border border-emerald-300/20 bg-emerald-300/10 p-5 shadow-2xl">
+              <div className="absolute right-6 top-6 rounded-full border border-yellow-300/30 bg-yellow-300/15 px-4 py-2 text-xs font-black uppercase tracking-wide text-yellow-100">
+                Live Seedling
+              </div>
+              <div className="relative aspect-[4/3] overflow-hidden rounded-[1.5rem] bg-black/30">
+                <Image
+                  src="/agarwood-marketplace-hero.png"
+                  alt="Aquilaria Malaccensis seedling"
+                  fill
+                  sizes="(min-width: 1024px) 40vw, 100vw"
+                  className="object-cover"
+                />
+              </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl bg-black/30 p-4">
+                  <p className="text-xs font-black uppercase tracking-wide text-emerald-100/55">Species</p>
+                  <p className="mt-2 text-xl font-black text-emerald-100">{SEEDLING_PRODUCT.species}</p>
+                </div>
+                <div className="rounded-2xl bg-black/30 p-4">
+                  <p className="text-xs font-black uppercase tracking-wide text-emerald-100/55">Payment</p>
+                  <p className="mt-2 text-xl font-black text-yellow-200">Wallet only</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-7xl gap-6 px-6 py-8 md:px-10 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6">
-          <h2 className="text-3xl font-black">Seedling Packages</h2>
-          <p className="mt-2 text-sm text-white/70">Wallet balance: {peso(wallet?.balance)}</p>
-
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
-            {PACKAGES.map((item) => (
-              <button key={item.qty} onClick={() => setSelected(item)} className={`rounded-3xl border p-5 text-left ${selected.qty === item.qty ? "border-green-300 bg-green-400/15" : "border-white/10 bg-black/25"}`}>
-                <p className="text-3xl font-black">{item.qty}</p>
-                <p className="mt-1 text-sm text-white/70">Seedling(s)</p>
-                <p className="mt-4 text-lg font-black text-green-300">{peso(item.price)}</p>
-              </button>
-            ))}
-          </div>
+      <section className="mx-auto grid max-w-7xl gap-6 px-6 py-8 md:px-10 xl:grid-cols-[1fr_0.82fr]">
+        <div className="space-y-6">
+          <Panel title="Aquilaria Malaccensis" subtitle="Only this species is available for investor purchase at this stage.">
+            <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+              <div className="relative min-h-[320px] overflow-hidden rounded-[1.5rem] border border-emerald-300/20 bg-black/25">
+                <Image
+                  src="/agarwood-marketplace-hero.png"
+                  alt="Aquilaria Malaccensis"
+                  fill
+                  sizes="(min-width: 1024px) 38vw, 100vw"
+                  className="object-cover"
+                />
+              </div>
+              <div className="grid content-start gap-4">
+                <div className="rounded-3xl border border-emerald-300/20 bg-emerald-300/10 p-5">
+                  <p className="text-xs font-black uppercase tracking-[0.25em] text-emerald-200">Available Seedling</p>
+                  <h2 className="mt-3 text-3xl font-black text-white">{SEEDLING_PRODUCT.name}</h2>
+                  <p className="mt-3 text-sm leading-7 text-white/68">{SEEDLING_PRODUCT.description}</p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Info label="Quantity" value="1 seedling" />
+                  <Info label="Payment" value="Wallet money only" />
+                  <Info label="Price" value={peso(SEEDLING_PRODUCT.price)} />
+                  <Info label="Status After Payment" value="Waiting admin AG tree approval" />
+                </div>
+              </div>
+            </div>
+          </Panel>
         </div>
 
-        <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6">
-          <h2 className="text-3xl font-black">Checkout</h2>
-          <p className="mt-3 text-4xl font-black text-green-300">{peso(selected.price)}</p>
-          <div className="mt-6 space-y-4">
-            <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Payment reference / receipt number" className="w-full rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            <button onClick={submitForApproval} disabled={loading} className="w-full rounded-2xl bg-yellow-400 px-6 py-4 text-sm font-black text-yellow-950 disabled:bg-slate-500">Submit for Admin Approval</button>
-            <button onClick={payFromWallet} disabled={loading} className="w-full rounded-2xl bg-green-500 px-6 py-4 text-sm font-black text-green-950 disabled:bg-slate-500">Pay From Wallet</button>
+        <div className="space-y-6">
+          <div className="sticky top-6 rounded-[2rem] border border-white/10 bg-white/[0.07] p-6 shadow-2xl backdrop-blur">
+            <p className="text-xs font-black uppercase tracking-[0.25em] text-emerald-300">Checkout</p>
+            <h2 className="mt-3 text-3xl font-black">Wallet Checkout</h2>
+
+            <div className="mt-6 rounded-3xl border border-white/10 bg-black/25 p-5">
+              <p className="text-sm font-bold text-white/55">{SEEDLING_PRODUCT.name}</p>
+              <p className="mt-3 text-4xl font-black text-emerald-300">{peso(SEEDLING_PRODUCT.price)}</p>
+              <p className="mt-3 text-sm leading-6 text-white/60">
+                Annual inoculation and maintenance fund: {peso(ANNUAL_MAINTENANCE_FEE)} per year for {MAINTENANCE_YEARS} years.
+              </p>
+            </div>
+
+            <div className="mt-5 grid gap-3 rounded-3xl border border-white/10 bg-black/25 p-4">
+              <Info label="Loaded Co-Planter" value={profile?.full_name || profile?.email || "Not loaded"} />
+              <Info label="Wallet Balance" value={peso(walletBalance)} />
+              <Info label="Wallet Pay Status" value={canPayFromWallet ? "Available" : "Needs more credits"} />
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <button
+                onClick={payFromWallet}
+                disabled={loading || !canPayFromWallet}
+                className="w-full rounded-2xl bg-emerald-400 px-6 py-4 text-sm font-black text-emerald-950 hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-slate-500"
+              >
+                {loading ? "Loading wallet..." : "Pay With Wallet Money"}
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-3 rounded-2xl border border-white/10 bg-black/25 p-4 text-xs leading-6 text-white/65">
+              <p>{platformMoneyNotice}</p>
+              <p>{projectionDisclaimer}</p>
+            </div>
           </div>
         </div>
       </section>
 
       <section className="mx-auto max-w-7xl px-6 pb-16 md:px-10">
-        <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6">
-          <h2 className="text-3xl font-black">My Purchases</h2>
-          <div className="mt-6 grid gap-3">
+        <Panel title="My Purchase Records" subtitle="Newest seedling purchase requests and wallet-paid orders.">
+          <div className="grid gap-3">
             {purchases.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-black/25 p-6 text-sm font-bold text-white/60">No purchases yet.</div>
-            ) : purchases.map((purchase) => (
-              <div key={purchase.id} className="rounded-2xl border border-white/10 bg-black/25 p-5">
-                <p className="text-lg font-black text-green-200">{purchase.quantity || "-"} Seedling(s)</p>
-                <p className="mt-1 text-sm text-white/70">{peso(purchase.total_amount || purchase.amount)}</p>
-                <p className="mt-1 text-sm text-white/60">Ref: {purchase.payment_reference || "-"}</p>
-                <p className="mt-3 inline-flex rounded-full border border-yellow-300/30 bg-yellow-400/15 px-3 py-1 text-xs font-black text-yellow-100">{purchase.status || "PENDING"}</p>
+              <div className="rounded-2xl border border-dashed border-white/10 bg-black/25 p-6 text-sm font-bold text-white/60">
+                No purchases yet.
               </div>
-            ))}
+            ) : (
+              purchases.map((purchase) => (
+                <div key={purchase.id} className="rounded-2xl border border-white/10 bg-black/25 p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-lg font-black text-emerald-100">{purchase.quantity || "-"} Seedling(s)</p>
+                      <p className="mt-1 text-sm text-white/60">Ref: {purchase.payment_reference || "-"}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-black text-emerald-300">{peso(purchase.total_amount || purchase.amount)}</p>
+                      <span className={`mt-2 inline-flex rounded-full border px-3 py-1 text-xs font-black ${statusClass(purchase.status)}`}>
+                        {purchase.status || "PENDING"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-        </div>
+        </Panel>
       </section>
     </main>
+  );
+}
+
+function Panel({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
+      <div className="mb-5">
+        <h2 className="text-2xl font-black md:text-3xl">{title}</h2>
+        <p className="mt-2 text-sm leading-6 text-white/60">{subtitle}</p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+      <p className="text-xs font-black uppercase tracking-wide text-white/45">{label}</p>
+      <p className="mt-2 text-lg font-black text-emerald-200">{value}</p>
+    </div>
+  );
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-2xl bg-white/[0.06] px-4 py-3">
+      <p className="text-xs font-bold uppercase tracking-wide text-white/45">{label}</p>
+      <p className="text-right text-sm font-black text-white">{value}</p>
+    </div>
   );
 }

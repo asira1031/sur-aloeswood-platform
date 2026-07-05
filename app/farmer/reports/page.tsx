@@ -103,11 +103,6 @@ export default function FarmerReportsPage() {
             </div>
           </div>
 
-          <div className="mt-8 grid gap-3 rounded-3xl border border-white/10 bg-white/10 p-4 md:grid-cols-[1fr_auto]">
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Farmer email" className="w-full rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            <button onClick={() => loadReports()} disabled={loading} className="rounded-2xl bg-green-500 px-8 py-4 text-sm font-black text-green-950 disabled:bg-slate-500">{loading ? "Loading..." : "Load Reports"}</button>
-          </div>
-
           {message && <div className="mt-4 rounded-2xl border border-yellow-300/30 bg-yellow-400/15 px-5 py-4 text-sm font-bold text-yellow-100">{message}</div>}
         </div>
       </section>

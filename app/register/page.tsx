@@ -4,143 +4,289 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
 
-function makeReferralCode(name: string) {
-  const prefix = String(name || "SUR").replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 4).padEnd(4, "X");
-  const rand = Math.floor(100000 + Math.random() * 900000);
-  return `${prefix}${rand}`;
+function makeReferralCode(fullName: string) {
+  const base = fullName
+    .replace(/[^a-zA-Z]/g, "")
+    .slice(0, 4)
+    .toUpperCase();
+
+  const random = Math.floor(100000 + Math.random() * 900000);
+  return `${base || "SUR"}${random}`;
 }
 
 export default function RegisterPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [mobile, setMobile] = useState("");
   const [address, setAddress] = useState("");
-  const [linkedType, setLinkedType] = useState("GCASH");
-  const [accountName, setAccountName] = useState("");
-  const [accountNumber, setAccountNumber] = useState("");
   const [referredBy, setReferredBy] = useState("");
+
   const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const referralFromUrl = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return new URLSearchParams(window.location.search).get("ref") || "";
-  }, []);
+  const referralCode = useMemo(() => makeReferralCode(fullName), [fullName]);
 
-  async function register() {
+  const handleRegister = async () => {
     setMessage("");
-    const cleanEmail = email.toLowerCase().trim();
 
-    if (!fullName.trim() || !cleanEmail) {
-      setMessage("Full name and email are required.");
+    if (!fullName || !email || !mobile || !address) {
+      setMessage("Please complete your personal information.");
       return;
     }
 
-    setBusy(true);
-    const referralCode = makeReferralCode(fullName);
+    if (password.length < 8) {
+      setMessage("Password must be at least 8 characters.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setMessage("Passwords do not match.");
+      return;
+    }
+
+    setLoading(true);
+
+    const cleanEmail = email.toLowerCase().trim();
+
+    const { data: existing } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("email", cleanEmail)
+      .maybeSingle();
+
+    if (existing) {
+      setLoading(false);
+      setMessage("Email already registered. Please login.");
+      return;
+    }
+
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: cleanEmail,
+      password,
+    });
+
+    if (authError || !authData.user) {
+      setLoading(false);
+      const authMessage = String(authError?.message || "").toLowerCase();
+      setMessage(
+        authMessage.includes("rate limit")
+          ? "Too many email attempts. Please wait a few minutes, then try again with the same email."
+          : authError?.message || "Unable to create secure login."
+      );
+      return;
+    }
+
+    const profilePayload = {
+      full_name: fullName.trim(),
+      email: cleanEmail,
+      mobile_number: mobile.trim(),
+      mobile: mobile.trim(),
+      address: address.trim(),
+      role: "COPLANTER",
+      auth_user_id: authData.user.id,
+      kyc_status: "PENDING",
+      account_status: "PENDING",
+      referral_code: referralCode,
+      referred_by: referredBy.trim() || null,
+    };
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .insert({
-        full_name: fullName.trim(),
-        email: cleanEmail,
-        mobile_number: mobile.trim() || null,
-        mobile: mobile.trim() || null,
-        address: address.trim() || null,
-        role: "COPLANTER",
-        account_status: "PENDING",
-        kyc_status: "PENDING",
-        membership_status: "PENDING",
-        wallet_balance: 0,
-        referral_code: referralCode,
-        referred_by: referredBy.trim() || referralFromUrl || null,
-      })
-      .select("id, full_name, email, referral_code")
-      .maybeSingle();
+      .insert(profilePayload)
+      .select()
+      .single();
 
     if (profileError || !profile) {
-      setMessage(profileError?.message || "Registration failed.");
-      setBusy(false);
+      setLoading(false);
+      setMessage(profileError?.message || "Unable to create profile.");
       return;
     }
 
-    await supabase.from("wallets").insert({ profile_id: profile.id, balance: 0 });
-
-    if (accountName.trim() || accountNumber.trim()) {
-      await supabase.from("linked_accounts").insert({
-        profile_id: profile.id,
-        account_type: linkedType,
-        provider_name: linkedType,
-        account_name: accountName.trim() || fullName.trim(),
-        account_number: accountNumber.trim() || null,
-        status: "PENDING",
-      });
-    }
-
-    await supabase.from("notifications").insert({
+    const { error: walletError } = await supabase.from("wallets").insert({
       profile_id: profile.id,
-      title: "Registration submitted",
-      message: "Your co-planter account was created and is pending admin approval.",
-      is_read: false,
+      balance: 0,
     });
 
-    localStorage.setItem("sur_login_email", profile.email);
-    localStorage.setItem("sur_profile_id", profile.id);
-    setMessage(`Registration submitted. Referral code: ${profile.referral_code}.`);
-    setBusy(false);
-  }
+    if (walletError) {
+      setLoading(false);
+      setMessage(walletError.message);
+      return;
+    }
+
+    setLoading(false);
+
+    setMessage(
+      `Pending admin approval. Login to check status. Save your referral code: ${referralCode}.`
+    );
+
+    setFullName("");
+    setEmail("");
+    setPassword("");
+    setConfirmPassword("");
+    setMobile("");
+    setAddress("");
+    setReferredBy("");
+  };
 
   return (
-    <main className="min-h-screen bg-[#06170f] px-6 py-10 text-white lg:px-14">
-      <section className="mx-auto max-w-5xl">
-        <p className="text-sm font-black uppercase tracking-[0.3em] text-green-300">SUR ALOESWOOD</p>
-        <h1 className="mt-3 text-4xl font-black lg:text-6xl">Create Co-Planter Account</h1>
-        <p className="mt-3 max-w-3xl text-green-100/80">Register as a co-planter. Your account, KYC and linked account start as pending for admin review.</p>
+    <main className="relative min-h-screen overflow-hidden bg-green-950 text-white">
+      <div
+        className="absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: "url('/forest-bg.jpg')" }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-r from-green-950/90 via-green-950/65 to-blue-950/60" />
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
-            <h2 className="text-2xl font-black">Profile Details</h2>
-            <div className="mt-5 grid gap-4">
-              <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-              <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-              <input value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Mobile number" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-              <textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={4} placeholder="Address" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-              <input value={referredBy || referralFromUrl} onChange={(e) => setReferredBy(e.target.value)} placeholder="Referral code optional" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            </div>
+      <nav className="relative z-10 flex items-center justify-between px-8 py-6 lg:px-16">
+        <Link href="/" className="flex items-center gap-4">
+          <img
+            src="/agarwood.png"
+            alt="SUR Aloeswood"
+            className="h-14 w-14 rounded-2xl object-cover shadow-lg"
+          />
+          <div>
+            <h1 className="text-2xl font-black tracking-wide">
+              SUR ALOESWOOD
+            </h1>
+            <p className="text-sm font-semibold text-green-200">
+              Fintech Co-Planter Platform
+            </p>
           </div>
+        </Link>
 
-          <div className="space-y-6">
-            <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
-              <h2 className="text-2xl font-black">Linked Account</h2>
-              <div className="mt-5 grid gap-4">
-                <select value={linkedType} onChange={(e) => setLinkedType(e.target.value)} className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none">
-                  <option>GCASH</option>
-                  <option>MAYA</option>
-                  <option>BANK</option>
-                </select>
-                <input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="Account name" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-                <input value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} placeholder="Account number" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-              </div>
-            </div>
+        <Link
+          href="/login"
+          className="rounded-full border border-white/40 bg-white/15 px-6 py-3 font-bold text-white shadow-lg backdrop-blur hover:bg-white/25"
+        >
+          Login
+        </Link>
+      </nav>
 
-            <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
-              <h2 className="text-2xl font-black">Rules</h2>
-              <div className="mt-4 space-y-2 text-sm leading-6 text-white/70">
-                <p>Account starts as PENDING.</p>
-                <p>KYC starts as PENDING.</p>
-                <p>Wallet is created automatically.</p>
-                <p>Seedling price is ₱14,000 per tree.</p>
-                <p>No guaranteed returns.</p>
-              </div>
-            </div>
+      <section className="relative z-10 mx-auto grid max-w-7xl gap-10 px-8 pb-16 lg:grid-cols-[0.9fr_1.1fr] lg:px-16">
+        <div className="pt-10">
+          <p className="inline-flex rounded-full bg-white/15 px-5 py-2 text-sm font-bold text-green-100 backdrop-blur">
+            Official Co-Planter Registration
+          </p>
+
+          <h2 className="mt-6 text-5xl font-black leading-tight lg:text-7xl">
+            Start your
+            <span className="block text-green-300">Agarwood journey.</span>
+          </h2>
+
+          <p className="mt-6 max-w-xl text-lg leading-8 text-green-50/90">
+            Create your secure account for SUR Aloeswood review and access the
+            co-planter portal after admin approval.
+          </p>
+
+          <div className="mt-8 rounded-3xl border border-white/15 bg-white/10 p-6 backdrop-blur">
+            <p className="text-sm font-bold text-green-200">
+              Registration Review
+            </p>
+            <p className="mt-2 text-sm leading-7 text-white/85">
+              Your application will be checked by the SUR Aloeswood team before
+              account activation, package confirmation, and portal access.
+            </p>
           </div>
         </div>
 
-        {message && <div className="mt-6 rounded-2xl border border-yellow-300/30 bg-yellow-400/15 px-5 py-4 text-sm font-bold text-yellow-100">{message}</div>}
+        <div className="rounded-[2rem] border border-white/20 bg-white/95 p-8 text-slate-900 shadow-2xl backdrop-blur-xl">
+          <h3 className="text-3xl font-black text-blue-950">
+            Create Co-Planter Account
+          </h3>
+          <p className="mt-2 text-slate-500">
+            Create your account, then wait for admin approval.
+          </p>
 
-        <div className="mt-6 flex flex-wrap gap-3">
-          <button onClick={register} disabled={busy} className="rounded-2xl bg-green-500 px-8 py-4 text-sm font-black text-green-950 disabled:bg-slate-500">{busy ? "Submitting..." : "Create Account"}</button>
-          <Link href="/login" className="rounded-2xl border border-white/10 bg-white/10 px-8 py-4 text-sm font-black">Back to Login</Link>
+          <form className="mt-8 space-y-6">
+            <div>
+              <h4 className="mb-4 text-lg font-black text-green-800">
+                Account Information
+              </h4>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Full name"
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+                />
+
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Email address"
+                  autoComplete="email"
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+                />
+
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Password minimum 8 characters"
+                  autoComplete="new-password"
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+                />
+
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm password"
+                  autoComplete="new-password"
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+                />
+
+                <input
+                  type="text"
+                  value={mobile}
+                  onChange={(e) => setMobile(e.target.value)}
+                  placeholder="Mobile number"
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+                />
+
+                <input
+                  type="text"
+                  value={referredBy}
+                  onChange={(e) => setReferredBy(e.target.value)}
+                  placeholder="Referral code optional"
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+                />
+              </div>
+
+              <textarea
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="Complete address"
+                className="mt-4 min-h-24 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 outline-none focus:border-green-600"
+              />
+            </div>
+
+            {message && (
+              <div className="rounded-2xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">
+                {message}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleRegister}
+              disabled={loading}
+              className="w-full rounded-2xl bg-green-600 px-6 py-4 text-lg font-black text-white shadow-xl hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+            >
+              {loading ? "Creating Account..." : "Create Co-Planter Account"}
+            </button>
+          </form>
+
+          <p className="mt-6 text-sm text-slate-500">
+            Already have an account?{" "}
+            <Link href="/login" className="font-bold text-green-700">
+              Login here
+            </Link>
+          </p>
         </div>
       </section>
     </main>

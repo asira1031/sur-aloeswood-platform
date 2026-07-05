@@ -3,6 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
 import { formatDate, getPublicSupportContacts, statusClass, type AnyRow } from "@/app/lib/settings/preferences";
+import {
+  COPLANTER_PACKAGE_PRICE,
+  peso,
+  projectionDisclaimer,
+} from "@/app/lib/business/rules";
 
 export default function AdminSettingsPage() {
   const [profiles, setProfiles] = useState<AnyRow[]>([]);
@@ -128,53 +133,67 @@ export default function AdminSettingsPage() {
   const unreadNotifications = useMemo(() => notifications.filter((n) => !n.is_read), [notifications]);
 
   return (
-    <main className="min-h-screen bg-[#04140d] text-white">
-      <section className="border-b border-white/10 px-6 py-8 md:px-10">
-        <div className="mx-auto max-w-7xl">
-          <div className="flex flex-wrap items-start justify-between gap-5">
+    <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
+      <div className="mx-auto w-full max-w-[1500px] px-4 py-4 lg:px-6">
+        <section className="relative overflow-hidden rounded-[2rem] border border-white/20 p-6 shadow-sm lg:p-8">
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/forest-bg.jpg')" }} />
+          <div className="absolute inset-0 bg-gradient-to-r from-green-950/90 via-green-900/66 to-green-950/18" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/10" />
+
+          <div className="relative z-10 flex flex-wrap items-start justify-between gap-5">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.35em] text-green-300">SUR ALOESWOOD ADMIN</p>
-              <h1 className="mt-4 text-4xl font-black md:text-6xl">Platform Settings</h1>
-              <p className="mt-4 max-w-3xl text-sm leading-7 text-green-50/80">
+              <p className="text-xs font-black uppercase tracking-[0.32em] text-white/75">SUR Aloeswood Admin</p>
+              <h1 className="mt-4 max-w-3xl text-4xl font-black leading-tight text-white lg:text-6xl">Platform Settings</h1>
+              <p className="mt-4 max-w-3xl text-sm leading-7 text-white/78 lg:text-base">
                 Manage plantation sites, visible legal documents, support overview, and production readiness settings.
               </p>
             </div>
-            <button onClick={loadSettings} className="rounded-2xl bg-green-500 px-5 py-3 text-sm font-black text-green-950">
+            <button onClick={loadSettings} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 shadow-sm hover:bg-white/90">
               Refresh
             </button>
           </div>
 
-          {message && <div className="mt-4 rounded-2xl border border-yellow-300/30 bg-yellow-400/15 px-5 py-4 text-sm font-bold text-yellow-100">{message}</div>}
-        </div>
-      </section>
+          <div className="relative z-10 mt-8 grid gap-3 md:grid-cols-4">
+            <HeroStat label="Co-Planters" value={String(profiles.length)} />
+            <HeroStat label="Farms" value={String(farms.length)} />
+            <HeroStat label="Legal Docs" value={String(licenses.length)} />
+            <HeroStat label="Open Support" value={String(openTickets.length)} />
+          </div>
 
-      <section className="mx-auto grid max-w-7xl gap-5 px-6 py-8 md:grid-cols-4 md:px-10">
-        <Metric title="Co-Planters" value={String(profiles.length)} />
-        <Metric title="Farms" value={String(farms.length)} />
-        <Metric title="Legal Docs" value={String(licenses.length)} />
-        <Metric title="Open Support" value={String(openTickets.length)} />
-      </section>
+          {message && (
+            <div className="relative z-10 mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-900">
+              {message}
+            </div>
+          )}
+        </section>
 
-      <section className="mx-auto grid max-w-7xl gap-6 px-6 pb-16 md:px-10 lg:grid-cols-2">
-        <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
-          <h2 className="text-3xl font-black">Add Plantation Site</h2>
+        <section className="grid gap-5 py-5 md:grid-cols-4">
+          <Metric tone="white" title="Co-Planters" value={String(profiles.length)} detail="Registered accounts" />
+          <Metric tone="forest" title="Farms" value={String(farms.length)} detail="Plantation sites" />
+          <Metric tone="gold" title="Legal Docs" value={String(licenses.length)} detail="Visible compliance" />
+          <Metric tone="mist" title="Open Support" value={String(openTickets.length)} detail="Needs response" />
+        </section>
+
+        <section className="grid gap-6 pb-16 lg:grid-cols-2">
+          <div className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
+          <h2 className="text-2xl font-black text-slate-950">Add Plantation Site</h2>
 
           <div className="mt-6 grid gap-4">
-            <input value={farmName} onChange={(e) => setFarmName(e.target.value)} placeholder="Farm name" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            <input value={farmLocation} onChange={(e) => setFarmLocation(e.target.value)} placeholder="Location" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            <input value={farmGps} onChange={(e) => setFarmGps(e.target.value)} placeholder="GPS coordinates" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            <input value={farmArea} onChange={(e) => setFarmArea(e.target.value)} type="number" placeholder="Total area" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            <button onClick={addFarm} className="rounded-2xl bg-green-500 px-6 py-4 text-sm font-black text-green-950">Save Farm</button>
+            <input value={farmName} onChange={(e) => setFarmName(e.target.value)} placeholder="Farm name" className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
+            <input value={farmLocation} onChange={(e) => setFarmLocation(e.target.value)} placeholder="Location" className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
+            <input value={farmGps} onChange={(e) => setFarmGps(e.target.value)} placeholder="GPS coordinates" className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
+            <input value={farmArea} onChange={(e) => setFarmArea(e.target.value)} type="number" placeholder="Total area" className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
+            <button onClick={addFarm} className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700">Save Farm</button>
           </div>
 
           <div className="mt-8 space-y-3">
             {farms.map((farm) => (
-              <div key={farm.id} className="rounded-2xl bg-black/25 p-4">
+              <div key={farm.id} className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="font-black text-green-200">{farm.farm_name}</p>
-                    <p className="text-sm text-white/60">{farm.location || "-"}</p>
-                    <p className="text-xs text-white/45">{farm.gps_coordinates || "GPS pending"}</p>
+                    <p className="font-black text-slate-950">{farm.farm_name}</p>
+                    <p className="text-sm font-bold text-slate-600">{farm.location || "-"}</p>
+                    <p className="text-xs font-bold text-slate-500">{farm.gps_coordinates || "GPS pending"}</p>
                   </div>
                   <span className={`rounded-full border px-3 py-1 text-xs font-black ${statusClass(farm.status)}`}>{farm.status || "ACTIVE"}</span>
                 </div>
@@ -183,27 +202,27 @@ export default function AdminSettingsPage() {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
-          <h2 className="text-3xl font-black">Legal / DENR Documents</h2>
+          <div className="rounded-[2rem] border border-amber-100 bg-amber-50/75 p-5 shadow-sm lg:p-6">
+          <h2 className="text-2xl font-black text-slate-950">Legal / DENR Documents</h2>
 
           <div className="mt-6 grid gap-4">
-            <input value={licenseTitle} onChange={(e) => setLicenseTitle(e.target.value)} placeholder="Document title" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            <input value={licenseType} onChange={(e) => setLicenseType(e.target.value)} placeholder="Document type" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            <input value={licenseUrl} onChange={(e) => setLicenseUrl(e.target.value)} placeholder="File URL" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            <input value={licenseExpiry} onChange={(e) => setLicenseExpiry(e.target.value)} type="date" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            <button onClick={addLicense} className="rounded-2xl bg-yellow-400 px-6 py-4 text-sm font-black text-yellow-950">Save Legal Document</button>
+            <input value={licenseTitle} onChange={(e) => setLicenseTitle(e.target.value)} placeholder="Document title" className="rounded-2xl border border-amber-100 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-amber-400" />
+            <input value={licenseType} onChange={(e) => setLicenseType(e.target.value)} placeholder="Document type" className="rounded-2xl border border-amber-100 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-amber-400" />
+            <input value={licenseUrl} onChange={(e) => setLicenseUrl(e.target.value)} placeholder="File URL" className="rounded-2xl border border-amber-100 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-amber-400" />
+            <input value={licenseExpiry} onChange={(e) => setLicenseExpiry(e.target.value)} type="date" className="rounded-2xl border border-amber-100 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-amber-400" />
+            <button onClick={addLicense} className="rounded-2xl bg-amber-400 px-6 py-4 text-sm font-black text-amber-950 hover:bg-amber-300">Save Legal Document</button>
           </div>
 
           <div className="mt-8 space-y-3">
             {licenses.map((doc) => (
-              <div key={doc.id} className="rounded-2xl bg-black/25 p-4">
+              <div key={doc.id} className="rounded-2xl border border-white bg-white/80 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="font-black text-green-200">{doc.title}</p>
-                    <p className="text-sm text-white/60">{doc.document_type || "Document"}</p>
-                    <p className="text-xs text-white/45">Expiry: {formatDate(doc.expiry_date)}</p>
+                    <p className="font-black text-slate-950">{doc.title}</p>
+                    <p className="text-sm font-bold text-slate-600">{doc.document_type || "Document"}</p>
+                    <p className="text-xs font-bold text-slate-500">Expiry: {formatDate(doc.expiry_date)}</p>
                   </div>
-                  <button onClick={() => toggleLicenseVisibility(doc)} className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black">
+                  <button onClick={() => toggleLicenseVisibility(doc)} className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-black text-amber-900">
                     {doc.visible_to_coplanters ? "Visible" : "Hidden"}
                   </button>
                 </div>
@@ -212,42 +231,70 @@ export default function AdminSettingsPage() {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
-          <h2 className="text-3xl font-black">Support Settings</h2>
+          <div className="rounded-[2rem] border border-teal-100 bg-teal-50/75 p-5 shadow-sm lg:p-6">
+          <h2 className="text-2xl font-black text-slate-950">Support Settings</h2>
           <div className="mt-6 space-y-3">
             {getPublicSupportContacts().map((item) => (
-              <div key={item.label} className="rounded-2xl bg-black/25 p-4">
-                <p className="text-xs font-bold uppercase tracking-wide text-white/45">{item.label}</p>
-                <p className="mt-2 font-black text-green-200">{item.value}</p>
+              <div key={item.label} className="rounded-2xl border border-white bg-white/80 p-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{item.label}</p>
+                <p className="mt-2 font-black text-slate-950">{item.value}</p>
               </div>
             ))}
-            <div className="rounded-2xl bg-black/25 p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-white/45">Unread Notifications</p>
-              <p className="mt-2 font-black text-green-200">{unreadNotifications.length}</p>
+            <div className="rounded-2xl border border-white bg-white/80 p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Unread Notifications</p>
+              <p className="mt-2 font-black text-slate-950">{unreadNotifications.length}</p>
             </div>
           </div>
         </div>
 
-        <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
-          <h2 className="text-3xl font-black">Production Controls</h2>
-          <div className="mt-6 space-y-3 text-sm leading-7 text-white/70">
-            <p>Seedling price: ₱14,000 per tree.</p>
+          <div className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
+          <h2 className="text-2xl font-black text-slate-950">Production Controls</h2>
+          <div className="mt-6 space-y-3 text-sm font-bold leading-7 text-slate-600">
+            <p>Co-Planter package price: {peso(COPLANTER_PACKAGE_PRICE)} per package.</p>
             <p>AG tree codes are generated after admin approval.</p>
             <p>Legal documents marked visible appear on the plantation page.</p>
             <p>Support tickets are managed in Admin Support Center.</p>
-            <p>No guaranteed returns. Harvest depends on plantation performance, market conditions, and applicable laws.</p>
+            <p>{projectionDisclaimer}</p>
           </div>
         </div>
-      </section>
+        </section>
+      </div>
     </main>
   );
 }
 
-function Metric({ title, value }: { title: string; value: string }) {
+function HeroStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-5 shadow-2xl">
-      <p className="text-xs font-black uppercase tracking-wide text-green-100/60">{title}</p>
-      <p className="mt-3 truncate text-2xl font-black text-green-300">{value}</p>
+    <div className="rounded-2xl border border-white/20 bg-white/16 p-4 backdrop-blur">
+      <p className="text-xs font-black uppercase tracking-wide text-white/65">{label}</p>
+      <p className="mt-2 truncate text-2xl font-black text-white">{value}</p>
+    </div>
+  );
+}
+
+function Metric({
+  tone,
+  title,
+  value,
+  detail,
+}: {
+  tone: "gold" | "forest" | "white" | "mist";
+  title: string;
+  value: string;
+  detail: string;
+}) {
+  const styles = {
+    gold: "border-amber-100 bg-gradient-to-br from-white via-amber-50 to-yellow-50 text-amber-900",
+    forest: "border-emerald-100 bg-gradient-to-br from-white via-emerald-50 to-green-50 text-emerald-900",
+    white: "border-slate-200 bg-white text-slate-950",
+    mist: "border-teal-100 bg-gradient-to-br from-white via-teal-50 to-emerald-50 text-teal-900",
+  }[tone];
+
+  return (
+    <div className={`rounded-[1.5rem] border p-5 shadow-sm ${styles}`}>
+      <p className="text-xs font-black uppercase tracking-wide opacity-65">{title}</p>
+      <p className="mt-3 truncate text-3xl font-black">{value}</p>
+      <p className="mt-2 text-sm opacity-70">{detail}</p>
     </div>
   );
 }

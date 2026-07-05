@@ -1,31 +1,34 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
-import { formatDate, statusClass, type AnyRow } from "@/app/lib/coplanting/ui";
+import { formatDate, type AnyRow } from "@/app/lib/coplanting/ui";
+
+const requiredProfileFields = [
+  { key: "full_name", label: "Legal name" },
+  { key: "mobile", label: "Mobile number" },
+  { key: "address", label: "Current address" },
+];
+
+const KYC_BUCKET = "kyc-documents";
 
 export default function ProfilePage() {
-  const [email, setEmail] = useState("");
   const [profile, setProfile] = useState<AnyRow | null>(null);
-  const [linkedAccounts, setLinkedAccounts] = useState<AnyRow[]>([]);
   const [fullName, setFullName] = useState("");
   const [mobile, setMobile] = useState("");
   const [address, setAddress] = useState("");
-  const [providerName, setProviderName] = useState("");
-  const [accountType, setAccountType] = useState("GCASH");
-  const [accountName, setAccountName] = useState("");
-  const [accountNumber, setAccountNumber] = useState("");
+  const [validIdFile, setValidIdFile] = useState<File | null>(null);
+  const [selfieFile, setSelfieFile] = useState<File | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("sur_login_email") || "";
-    setEmail(saved);
     if (saved) loadProfile(saved);
   }, []);
 
-  async function loadProfile(targetEmail = email) {
+  async function loadProfile(targetEmail = localStorage.getItem("sur_login_email") || "") {
     setLoading(true);
     setMessage("");
 
@@ -33,29 +36,21 @@ export default function ProfilePage() {
 
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, full_name, email, mobile_number, mobile, address, role, membership_status, wallet_balance, created_at, account_status, kyc_status, referral_code, referred_by")
+      .select("*")
       .eq("email", cleanEmail)
       .maybeSingle();
 
     if (error || !data) {
       setMessage(error?.message || "Profile not found.");
       setProfile(null);
-      setLinkedAccounts([]);
       setLoading(false);
       return;
     }
-
-    const { data: accounts } = await supabase
-      .from("linked_accounts")
-      .select("id, profile_id, account_type, provider_name, account_name, account_number, status, created_at")
-      .eq("profile_id", data.id)
-      .order("created_at", { ascending: false });
 
     setProfile(data);
     setFullName(data.full_name || "");
     setMobile(data.mobile || data.mobile_number || "");
     setAddress(data.address || "");
-    setLinkedAccounts((accounts || []) as AnyRow[]);
     localStorage.setItem("sur_login_email", cleanEmail);
     localStorage.setItem("sur_profile_id", data.id);
     setLoading(false);
@@ -77,6 +72,7 @@ export default function ProfilePage() {
         mobile: mobile.trim(),
         mobile_number: mobile.trim(),
         address: address.trim(),
+        kyc_status: String(profile.kyc_status || "").toUpperCase() === "REJECTED" ? "PENDING" : profile.kyc_status,
       })
       .eq("id", profile.id);
 
@@ -86,138 +82,325 @@ export default function ProfilePage() {
       return;
     }
 
-    setMessage("Profile updated.");
+    setMessage("Profile saved. Admin can now review your KYC status.");
     await loadProfile(profile.email);
   }
 
-  async function addLinkedAccount() {
+  async function uploadKycDocuments() {
     if (!profile) {
       setMessage("Load profile first.");
       return;
     }
 
-    if (!accountName.trim() || !accountNumber.trim()) {
-      setMessage("Complete account name and number.");
+    if (!validIdFile && !selfieFile) {
+      setMessage("Choose at least one KYC file to upload.");
       return;
     }
 
     setLoading(true);
     setMessage("");
 
-    const { error } = await supabase.from("linked_accounts").insert({
-      profile_id: profile.id,
-      account_type: accountType,
-      provider_name: providerName.trim() || accountType,
-      account_name: accountName.trim(),
-      account_number: accountNumber.trim(),
-      status: "PENDING",
-    });
+    try {
+      const updates: AnyRow = {
+        kyc_status: String(profile.kyc_status || "").toUpperCase() === "APPROVED" ? "APPROVED" : "PENDING",
+        kyc_submitted_at: new Date().toISOString(),
+      };
 
-    if (error) {
-      setMessage(error.message);
+      if (validIdFile) {
+        updates.kyc_id_url = await uploadProfileFile(profile.id, "valid-id", validIdFile);
+      }
+
+      if (selfieFile) {
+        updates.kyc_selfie_url = await uploadProfileFile(profile.id, "selfie", selfieFile);
+      }
+
+      const { error } = await supabase.from("profiles").update(updates).eq("id", profile.id);
+      if (error) throw error;
+
+      setValidIdFile(null);
+      setSelfieFile(null);
+      setMessage("KYC documents uploaded. Admin can inspect them for verification.");
+      await loadProfile(profile.email);
+    } catch (err: any) {
+      setMessage(err?.message || "Unable to upload KYC documents.");
       setLoading(false);
-      return;
     }
-
-    setProviderName("");
-    setAccountName("");
-    setAccountNumber("");
-    setMessage("Linked account submitted for review.");
-    await loadProfile(profile.email);
   }
 
+  async function uploadProfileFile(profileId: string, kind: string, file: File) {
+    const extension = file.name.split(".").pop() || "jpg";
+    const path = `${profileId}/${kind}-${Date.now()}.${extension}`;
+    const { error } = await supabase.storage.from(KYC_BUCKET).upload(path, file, {
+      cacheControl: "3600",
+      upsert: true,
+    });
+
+    if (error) throw error;
+
+    const { data } = supabase.storage.from(KYC_BUCKET).getPublicUrl(path);
+    return data.publicUrl;
+  }
+
+  const completion = useMemo(() => {
+    if (!profile) return 0;
+    const hasName = Boolean(fullName.trim());
+    const hasMobile = Boolean(mobile.trim());
+    const hasAddress = Boolean(address.trim());
+    return [hasName, hasMobile, hasAddress].filter(Boolean).length;
+  }, [address, fullName, mobile, profile]);
+
+  const kycStatus = String(profile?.kyc_status || "PENDING").toUpperCase();
+  const accountStatus = String(profile?.account_status || "PENDING").toUpperCase();
+  const currentKycFiles = profile ? getKycFiles(profile) : [];
+
   return (
-    <main className="min-h-screen bg-[#06170f] text-white">
-      <section className="border-b border-white/10 bg-gradient-to-r from-green-950 via-emerald-950 to-slate-950 px-6 py-8 lg:px-14">
-        <div className="flex flex-wrap items-start justify-between gap-5">
-          <div>
-            <p className="text-sm font-black uppercase tracking-[0.3em] text-green-300">SUR Aloeswood</p>
-            <h1 className="mt-3 text-4xl font-black lg:text-6xl">Co-Planter Profile</h1>
+    <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
+      <div className="mx-auto w-full max-w-[1500px] px-4 py-4 lg:px-6">
+        <section className="relative overflow-hidden rounded-[2rem] border border-white/20 p-6 shadow-sm lg:p-8">
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/forest-bg.jpg')" }} />
+          <div className="absolute inset-0 bg-gradient-to-r from-green-950/90 via-green-900/66 to-green-950/18" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/10" />
+
+          <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.32em] text-white/75">Investor Verification</p>
+              <h1 className="mt-4 max-w-3xl text-4xl font-black leading-tight text-white lg:text-6xl">
+                KYC and Profile
+              </h1>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-white/78 lg:text-base">
+                Keep your legal profile, contact details, and payout account ready for admin review.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => loadProfile()}
+                disabled={loading}
+                className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 shadow-sm hover:bg-white/90 disabled:opacity-60"
+              >
+                {loading ? "Loading..." : "Refresh"}
+              </button>
+              <Link
+                href="/investor/dashboard"
+                className="rounded-2xl border border-white/25 bg-white/15 px-5 py-3 text-sm font-black text-white backdrop-blur hover:bg-white/20"
+              >
+                Dashboard
+              </Link>
+            </div>
           </div>
-          <Link href="/investor/dashboard" className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-sm font-black">Dashboard</Link>
-        </div>
 
-        <div className="mt-8 grid gap-3 rounded-3xl border border-white/10 bg-white/10 p-4 md:grid-cols-[1fr_auto]">
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Registered email" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-          <button onClick={() => loadProfile()} disabled={loading} className="rounded-2xl bg-green-500 px-8 py-4 text-sm font-black text-green-950 disabled:bg-slate-500">{loading ? "Loading..." : "Load Profile"}</button>
-        </div>
+          <div className="relative z-10 mt-8 grid gap-3 md:grid-cols-3">
+            <HeroStat label="KYC Status" value={kycStatus} />
+            <HeroStat label="Account Status" value={accountStatus} />
+            <HeroStat label="Readiness" value={`${completion}/3`} />
+          </div>
 
-        {message && <div className="mt-4 rounded-2xl border border-yellow-300/30 bg-yellow-400/15 px-5 py-4 text-sm font-bold text-yellow-100">{message}</div>}
-      </section>
+          {message && (
+            <div className="relative z-10 mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-900">
+              {message}
+            </div>
+          )}
+        </section>
 
-      <section className="grid gap-6 px-6 py-8 lg:grid-cols-[0.8fr_1.2fr] lg:px-14">
-        <div className="space-y-6">
-          <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6">
-            <h2 className="text-2xl font-black">Account Status</h2>
-            {profile ? (
-              <div className="mt-5 space-y-3">
-                <Info label="Name" value={profile.full_name || "-"} />
-                <Info label="Email" value={profile.email || "-"} />
-                <Info label="Role" value="Co-Planter" />
-                <Info label="Created" value={formatDate(profile.created_at)} />
-                <div className="flex flex-wrap gap-2 pt-2">
-                  <span className={`rounded-full border px-3 py-1 text-xs font-black ${statusClass(profile.account_status)}`}>Account: {profile.account_status || "PENDING"}</span>
-                  <span className={`rounded-full border px-3 py-1 text-xs font-black ${statusClass(profile.kyc_status)}`}>KYC: {profile.kyc_status || "PENDING"}</span>
-                  <span className={`rounded-full border px-3 py-1 text-xs font-black ${statusClass(profile.membership_status)}`}>Membership: {profile.membership_status || "PENDING"}</span>
+        <section className="grid gap-5 py-5 lg:grid-cols-[0.82fr_1.18fr]">
+          <div className="space-y-5">
+            <section className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-950">Verification Status</h2>
+                  <p className="mt-1 text-sm text-slate-600">Admin approval depends on complete and matching profile details.</p>
                 </div>
+                <Badge value={kycStatus} />
               </div>
-            ) : <Empty text="Load your profile." />}
-          </div>
 
-          <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6">
-            <h2 className="text-2xl font-black">Linked Accounts</h2>
-            <div className="mt-5 space-y-3">
-              {linkedAccounts.length === 0 ? <Empty text="No linked accounts yet." /> : linkedAccounts.map((account) => (
-                <div key={account.id} className="rounded-2xl bg-black/20 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-black text-green-200">{account.account_type}</p>
-                      <p className="text-sm text-white/70">{account.provider_name || "-"}</p>
-                      <p className="text-sm text-white/70">{account.account_name || "-"} • {account.account_number || "-"}</p>
-                    </div>
-                    <span className={`rounded-full border px-3 py-1 text-xs font-black ${statusClass(account.status)}`}>{account.status || "PENDING"}</span>
-                  </div>
+              <div className="mt-5 grid gap-3">
+                {requiredProfileFields.map((field) => {
+                  const value = field.key === "mobile" ? mobile : field.key === "address" ? address : fullName;
+                  return <Checklist key={field.key} label={field.label} done={Boolean(value.trim())} />;
+                })}
+              </div>
+            </section>
+
+            <section className="rounded-[2rem] border border-amber-100 bg-amber-50/75 p-5 shadow-sm lg:p-6">
+              <h2 className="text-2xl font-black text-slate-950">Account Record</h2>
+              {profile ? (
+                <div className="mt-5 space-y-3">
+                  <Info label="Name" value={profile.full_name || "-"} />
+                  <Info label="Email" value={profile.email || "-"} />
+                  <Info label="Created" value={formatDate(profile.created_at)} />
+                  <Info label="Referral Code" value={profile.referral_code || "Pending"} />
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6">
-            <h2 className="text-2xl font-black">Edit Profile</h2>
-            <div className="mt-5 grid gap-4">
-              <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-              <input value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Mobile number" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-              <textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={4} placeholder="Address" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-              <button onClick={saveProfile} disabled={loading || !profile} className="rounded-2xl bg-green-500 px-6 py-4 text-sm font-black text-green-950 disabled:bg-slate-500">Save Profile</button>
-            </div>
+              ) : (
+                <Empty text="Load your profile to see account status." />
+              )}
+            </section>
           </div>
 
-          <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6">
-            <h2 className="text-2xl font-black">Add Bank / GCash / Maya</h2>
-            <div className="mt-5 grid gap-4">
-              <select value={accountType} onChange={(e) => setAccountType(e.target.value)} className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none">
-                <option>GCASH</option>
-                <option>MAYA</option>
-                <option>BANK</option>
-              </select>
-              <input value={providerName} onChange={(e) => setProviderName(e.target.value)} placeholder="Provider name" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-              <input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="Account name" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-              <input value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} placeholder="Account number" className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-              <button onClick={addLinkedAccount} disabled={loading || !profile} className="rounded-2xl bg-yellow-400 px-6 py-4 text-sm font-black text-yellow-950 disabled:bg-slate-500">Submit Linked Account</button>
-            </div>
+          <div className="space-y-5">
+            <section className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
+              <h2 className="text-2xl font-black text-slate-950">Legal Profile Details</h2>
+              <p className="mt-1 text-sm text-slate-600">These values are what admin sees during KYC review.</p>
+              <div className="mt-5 grid gap-4">
+                <input
+                  value={fullName}
+                  onChange={(event) => setFullName(event.target.value)}
+                  placeholder="Legal full name"
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
+                />
+                <input
+                  value={mobile}
+                  onChange={(event) => setMobile(event.target.value)}
+                  placeholder="Mobile number"
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
+                />
+                <textarea
+                  value={address}
+                  onChange={(event) => setAddress(event.target.value)}
+                  rows={4}
+                  placeholder="Complete address"
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
+                />
+                <button
+                  onClick={saveProfile}
+                  disabled={loading || !profile}
+                  className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  Save KYC Details
+                </button>
+              </div>
+            </section>
+
+            <section className="rounded-[2rem] border border-teal-100 bg-teal-50/75 p-5 shadow-sm lg:p-6">
+              <h2 className="text-2xl font-black text-slate-950">KYC Document Upload</h2>
+              <p className="mt-1 text-sm text-slate-600">Upload a clear valid ID and selfie/photo for admin inspection.</p>
+
+              <div className="mt-5 grid gap-4">
+                <label className="rounded-2xl border border-dashed border-teal-200 bg-white/80 p-4">
+                  <span className="text-sm font-black text-slate-950">Valid ID photo</span>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(event) => setValidIdFile(event.target.files?.[0] || null)}
+                    className="mt-3 block w-full text-sm font-bold text-slate-700 file:mr-4 file:rounded-xl file:border-0 file:bg-emerald-600 file:px-4 file:py-2 file:text-sm file:font-black file:text-white"
+                  />
+                </label>
+
+                <label className="rounded-2xl border border-dashed border-teal-200 bg-white/80 p-4">
+                  <span className="text-sm font-black text-slate-950">Selfie or verification photo</span>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(event) => setSelfieFile(event.target.files?.[0] || null)}
+                    className="mt-3 block w-full text-sm font-bold text-slate-700 file:mr-4 file:rounded-xl file:border-0 file:bg-emerald-600 file:px-4 file:py-2 file:text-sm file:font-black file:text-white"
+                  />
+                </label>
+
+                <button
+                  onClick={uploadKycDocuments}
+                  disabled={loading || !profile}
+                  className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  Upload KYC for Review
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-3 md:grid-cols-2">
+                {currentKycFiles.length === 0 ? (
+                  <Empty text="No KYC files uploaded yet." />
+                ) : (
+                  currentKycFiles.map((file) => <KycFile key={file.label} label={file.label} url={file.url} />)
+                )}
+              </div>
+            </section>
+
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
     </main>
   );
 }
 
+function HeroStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/20 bg-white/16 p-4 backdrop-blur">
+      <p className="text-xs font-black uppercase tracking-wide text-white/65">{label}</p>
+      <p className="mt-2 truncate text-2xl font-black text-white">{value}</p>
+    </div>
+  );
+}
+
+function Badge({ value }: { value: string }) {
+  const status = String(value || "PENDING").toUpperCase();
+  const style = status === "APPROVED" || status === "ACTIVE"
+    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+    : status === "REJECTED" || status === "SUSPENDED"
+      ? "border-red-200 bg-red-50 text-red-800"
+      : "border-amber-200 bg-amber-50 text-amber-800";
+
+  return <span className={`rounded-full border px-3 py-1 text-xs font-black ${style}`}>{status}</span>;
+}
+
+function Checklist({ label, done }: { label: string; done: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+      <span className="text-sm font-black text-slate-950">{label}</span>
+      <span className={`rounded-full px-3 py-1 text-xs font-black ${done ? "bg-emerald-600 text-white" : "bg-amber-300 text-amber-950"}`}>
+        {done ? "Ready" : "Needed"}
+      </span>
+    </div>
+  );
+}
+
 function Info({ label, value }: { label: string; value: string }) {
-  return <div className="flex items-center justify-between gap-4 rounded-2xl bg-black/20 px-4 py-3"><span className="text-white/50">{label}</span><span className="text-right font-bold">{value}</span></div>;
+  return (
+    <div className="rounded-2xl border border-white bg-white/80 p-4">
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-2 break-words text-sm font-black text-slate-950">{value}</p>
+    </div>
+  );
 }
 
 function Empty({ text }: { text: string }) {
-  return <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm font-bold text-white/60">{text}</div>;
+  return (
+    <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 p-5 text-sm font-bold text-slate-500">
+      {text}
+    </div>
+  );
+}
+
+function getKycFiles(profile: AnyRow) {
+  return [
+    { label: "Valid ID", url: firstText(profile, ["kyc_id_url", "kyc_document_url", "valid_id_url", "id_document_url"]) },
+    { label: "Selfie", url: firstText(profile, ["kyc_selfie_url", "selfie_url", "kyc_photo_url", "face_photo_url"]) },
+  ].filter((file) => file.url);
+}
+
+function firstText(row: AnyRow, keys: string[]) {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function KycFile({ label, url }: { label: string; url: string }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-white bg-white/80">
+      {isImageUrl(url) ? (
+        <img src={url} alt={label} className="h-44 w-full object-cover" />
+      ) : (
+        <div className="flex h-44 items-center justify-center bg-slate-100 text-sm font-black text-slate-600">Document file</div>
+      )}
+      <div className="flex items-center justify-between gap-3 p-4">
+        <p className="text-sm font-black text-slate-950">{label}</p>
+        <a href={url} target="_blank" rel="noreferrer" className="rounded-xl bg-slate-950 px-4 py-2 text-xs font-black text-white">
+          View
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function isImageUrl(url: string) {
+  return /\.(png|jpe?g|webp|gif|bmp|avif)(\?|#|$)/i.test(url);
 }

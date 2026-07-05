@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
 import { findProfile, formatDate, peso, profileName, statusClass, type AnyRow } from "@/app/lib/admin/activity";
@@ -12,6 +13,7 @@ export default function AdminAuditPage() {
   const [memberships, setMemberships] = useState<AnyRow[]>([]);
   const [maintenance, setMaintenance] = useState<AnyRow[]>([]);
   const [search, setSearch] = useState("");
+  const [kind, setKind] = useState("ALL");
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -67,45 +69,47 @@ export default function AdminAuditPage() {
     ]
       .filter((item) => {
         const profile = findProfile(item.row.profile_id, profiles);
+        const kindOk = kind === "ALL" || item.kind === kind;
         const text = `${item.kind} ${JSON.stringify(item.row)} ${profile?.full_name || ""} ${profile?.email || ""}`.toLowerCase();
-        return !keyword || text.includes(keyword);
+        return kindOk && (!keyword || text.includes(keyword));
       })
       .sort((a, b) => new Date(b.row.created_at || 0).getTime() - new Date(a.row.created_at || 0).getTime());
-  }, [transactions, purchases, memberships, maintenance, profiles, search]);
+  }, [transactions, purchases, memberships, maintenance, profiles, search, kind]);
 
   return (
-    <main className="min-h-screen bg-[#04140d] text-white">
-      <section className="border-b border-white/10 px-6 py-8 md:px-10">
-        <div className="mx-auto max-w-7xl">
-          <div className="flex flex-wrap items-start justify-between gap-5">
+    <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
+      <div className="mx-auto w-full max-w-[1500px] px-4 py-4 lg:px-6">
+        <Hero title="Audit Center" subtitle="Financial ledger review across wallets, purchases, memberships, and maintenance records." action={loadAudit} message={message} />
+
+        <section className="grid gap-4 py-5 md:grid-cols-2 xl:grid-cols-5">
+          <Metric title="Wallet Balance" value={peso(totalWalletBalance)} />
+          <Metric title="Wallet Tx Total" value={peso(totalWalletTx)} />
+          <Metric title="Purchases" value={peso(purchaseVolume)} />
+          <Metric title="Memberships" value={peso(membershipVolume)} />
+          <Metric title="Maintenance" value={peso(maintenanceVolume)} />
+        </section>
+
+        <section className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.35em] text-green-300">SUR ALOESWOOD ADMIN</p>
-              <h1 className="mt-4 text-4xl font-black md:text-6xl">Audit Center</h1>
+              <h2 className="text-2xl font-black text-slate-950">Financial Audit Ledger</h2>
+              <p className="mt-1 text-sm text-slate-600">Searchable audit trail for finance review.</p>
             </div>
-            <button onClick={loadAudit} className="rounded-2xl bg-green-500 px-5 py-3 text-sm font-black text-green-950">Refresh</button>
-          </div>
-          {message && <div className="mt-4 rounded-2xl border border-yellow-300/30 bg-yellow-400/15 px-5 py-4 text-sm font-bold text-yellow-100">{message}</div>}
-        </div>
-      </section>
-
-      <section className="mx-auto grid max-w-7xl gap-5 px-6 py-8 md:grid-cols-2 md:px-10 xl:grid-cols-5">
-        <Metric title="Wallet Balance" value={peso(totalWalletBalance)} />
-        <Metric title="Wallet Tx Total" value={peso(totalWalletTx)} />
-        <Metric title="Purchases" value={peso(purchaseVolume)} />
-        <Metric title="Memberships" value={peso(membershipVolume)} />
-        <Metric title="Maintenance" value={peso(maintenanceVolume)} />
-      </section>
-
-      <section className="mx-auto max-w-7xl px-6 pb-16 md:px-10">
-        <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-3xl font-black">Financial Audit Ledger</h2>
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search..." className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none" />
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search ledger" className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-emerald-400" />
+              <select value={kind} onChange={(event) => setKind(event.target.value)} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-emerald-400">
+                <option value="ALL">All</option>
+                <option value="WALLET">Wallet</option>
+                <option value="PURCHASE">Purchase</option>
+                <option value="MEMBERSHIP">Membership</option>
+                <option value="MAINTENANCE">Maintenance</option>
+              </select>
+            </div>
           </div>
 
-          <div className="mt-6 overflow-x-auto">
+          <div className="mt-5 overflow-x-auto">
             <table className="w-full min-w-[1000px] text-left">
-              <thead className="border-b border-white/10 text-xs uppercase tracking-wide text-green-100/70">
+              <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="py-3">Date</th>
                   <th>Type</th>
@@ -118,17 +122,17 @@ export default function AdminAuditPage() {
               </thead>
               <tbody>
                 {auditRows.length === 0 ? (
-                  <tr><td colSpan={7} className="py-10 text-sm font-bold text-white/55">No audit rows found.</td></tr>
+                  <tr><td colSpan={7} className="py-10 text-sm font-bold text-slate-500">No audit rows found.</td></tr>
                 ) : auditRows.map((item) => {
                   const profile = findProfile(item.row.profile_id, profiles);
                   return (
-                    <tr key={`${item.kind}-${item.row.id}`} className="border-b border-white/5 align-top">
-                      <td className="py-4 text-sm text-white/70">{formatDate(item.row.created_at)}</td>
-                      <td className="py-4 text-sm font-black text-green-200">{item.kind}</td>
-                      <td className="py-4 text-sm font-black">{profileName(profile)}</td>
-                      <td className="py-4 text-sm text-white/70">{profile?.email || "-"}</td>
-                      <td className="py-4 text-sm text-white/70">{item.label || "-"}</td>
-                      <td className="py-4 text-sm font-black text-green-300">{peso(item.amount)}</td>
+                    <tr key={`${item.kind}-${item.row.id}`} className="border-b border-slate-100 align-top">
+                      <td className="py-4 text-sm text-slate-600">{formatDate(item.row.created_at)}</td>
+                      <td className="py-4 text-sm font-black text-emerald-700">{item.kind}</td>
+                      <td className="py-4 text-sm font-black text-slate-950">{profileName(profile)}</td>
+                      <td className="py-4 text-sm text-slate-600">{profile?.email || "-"}</td>
+                      <td className="py-4 text-sm text-slate-600">{item.label || "-"}</td>
+                      <td className="py-4 text-sm font-black text-emerald-700">{peso(item.amount)}</td>
                       <td className="py-4"><span className={`rounded-full border px-3 py-1 text-xs font-black ${statusClass(item.row.status)}`}>{item.row.status || "LOGGED"}</span></td>
                     </tr>
                   );
@@ -136,17 +140,38 @@ export default function AdminAuditPage() {
               </tbody>
             </table>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
     </main>
+  );
+}
+
+function Hero({ title, subtitle, action, message }: { title: string; subtitle: string; action: () => void; message: string }) {
+  return (
+    <section className="relative overflow-hidden rounded-[2rem] border border-white/20 p-6 shadow-sm lg:p-8">
+      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/forest-bg.jpg')" }} />
+      <div className="absolute inset-0 bg-gradient-to-r from-green-950/90 via-green-900/66 to-green-950/18" />
+      <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.32em] text-white/75">SUR Aloeswood Admin</p>
+          <h1 className="mt-4 text-4xl font-black text-white lg:text-6xl">{title}</h1>
+          <p className="mt-4 max-w-3xl text-sm leading-7 text-white/78 lg:text-base">{subtitle}</p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <button onClick={action} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 shadow-sm hover:bg-white/90">Refresh</button>
+          <Link href="/admin/dashboard" className="rounded-2xl border border-white/25 bg-white/15 px-5 py-3 text-sm font-black text-white backdrop-blur hover:bg-white/20">Dashboard</Link>
+        </div>
+      </div>
+      {message && <div className="relative z-10 mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-900">{message}</div>}
+    </section>
   );
 }
 
 function Metric({ title, value }: { title: string; value: string }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-5 shadow-2xl">
-      <p className="text-xs font-black uppercase tracking-wide text-green-100/60">{title}</p>
-      <p className="mt-3 truncate text-xl font-black text-green-300">{value}</p>
+    <div className="rounded-[1.5rem] border border-emerald-100 bg-white p-5 shadow-sm">
+      <p className="text-xs font-black uppercase tracking-wide text-slate-500">{title}</p>
+      <p className="mt-3 truncate text-2xl font-black text-emerald-800">{value}</p>
     </div>
   );
 }

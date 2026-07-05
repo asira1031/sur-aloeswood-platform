@@ -16,9 +16,21 @@ export default function FarmerProfilePage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem("sur_login_email") || "";
-    setEmail(saved);
-    if (saved) loadProfile(saved);
+    async function bootstrap() {
+      const saved = localStorage.getItem("sur_login_email") || "";
+      const { data } = await supabase.auth.getUser();
+      const authEmail = data.user?.email?.toLowerCase().trim() || "";
+      const preferredEmail = authEmail || saved;
+
+      setEmail(preferredEmail);
+      if (preferredEmail) {
+        loadProfile(preferredEmail);
+      } else {
+        setMessage("Login first to load farmer profile.");
+      }
+    }
+
+    bootstrap();
   }, []);
 
   async function loadProfile(targetEmail = email) {
@@ -26,6 +38,12 @@ export default function FarmerProfilePage() {
     setMessage("");
 
     const cleanEmail = targetEmail.toLowerCase().trim();
+
+    if (!cleanEmail) {
+      setMessage("Login first to load farmer profile.");
+      setLoading(false);
+      return;
+    }
 
     const { data, error } = await supabase
       .from("gardeners")
@@ -107,11 +125,6 @@ export default function FarmerProfilePage() {
               <Link href="/farmer/dashboard" className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-sm font-black">Dashboard</Link>
               <Link href="/farmer/reports" className="rounded-2xl bg-green-500 px-5 py-3 text-sm font-black text-green-950">Reports</Link>
             </div>
-          </div>
-
-          <div className="mt-8 grid gap-3 rounded-3xl border border-white/10 bg-white/10 p-4 md:grid-cols-[1fr_auto]">
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Farmer email" className="w-full rounded-2xl bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none" />
-            <button onClick={() => loadProfile()} disabled={loading} className="rounded-2xl bg-green-500 px-8 py-4 text-sm font-black text-green-950 disabled:bg-slate-500">{loading ? "Loading..." : "Load Profile"}</button>
           </div>
 
           {message && <div className="mt-4 rounded-2xl border border-yellow-300/30 bg-yellow-400/15 px-5 py-4 text-sm font-bold text-yellow-100">{message}</div>}

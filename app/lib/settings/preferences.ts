@@ -32,7 +32,8 @@ export const statusClass = (status?: string | null) => {
 export const settingOptions = {
   supportPriority: ["NORMAL", "HIGH", "URGENT"],
   notificationMode: ["ALL", "IMPORTANT_ONLY", "OFF"],
-  themeMode: ["FOREST", "DARK", "GOLD"],
+  themeMode: ["FOREST", "LIGHT", "GOLD"],
+  dashboardDensity: ["COMFORTABLE", "COMPACT"],
 };
 
 export function getPublicSupportContacts() {

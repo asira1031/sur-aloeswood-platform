@@ -116,22 +116,6 @@ export default function TreeRegistryPage() {
             View your registered SUR Aloeswood trees, AG codes, DENR tags, GPS location, photos, and plantation status.
           </p>
 
-          <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/10 p-4 md:flex-row">
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter registered email"
-              className="min-h-12 flex-1 rounded-xl border border-white/10 bg-white px-4 font-semibold text-slate-900 outline-none"
-            />
-            <button
-              onClick={() => loadTrees()}
-              disabled={loading}
-              className="rounded-xl bg-yellow-400 px-6 py-3 font-black text-black hover:bg-yellow-300 disabled:opacity-60"
-            >
-              {loading ? "Loading..." : "Load My Trees"}
-            </button>
-          </div>
-
           <div className="mt-5 flex flex-wrap gap-3">
             <Link href="/investor/marketplace" className="rounded-xl bg-yellow-400 px-5 py-3 font-bold text-black">Buy Seedlings</Link>
             <Link href="/plantation" className="rounded-xl border border-emerald-500/30 px-5 py-3 font-bold text-emerald-100">Plantation Timeline</Link>

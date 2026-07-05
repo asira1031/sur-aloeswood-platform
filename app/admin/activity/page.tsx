@@ -1,8 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
 import { findProfile, formatDate, peso, profileName, statusClass, type AnyRow } from "@/app/lib/admin/activity";
+
+const categories = [
+  { key: "ALL", title: "All Activity", detail: "Everything" },
+  { key: "SUPPORT", title: "Support", detail: "Tickets and replies" },
+  { key: "WALLET", title: "Wallet TX", detail: "Ledger movement" },
+  { key: "PURCHASE", title: "Purchases", detail: "Seedling requests" },
+  { key: "CASHIN", title: "Cash-In", detail: "Treasury requests" },
+  { key: "NOTICE", title: "Notices", detail: "System alerts" },
+];
 
 export default function AdminActivityPage() {
   const [profiles, setProfiles] = useState<AnyRow[]>([]);
@@ -53,11 +63,11 @@ export default function AdminActivityPage() {
 
   const activityRows = useMemo(() => {
     return [
-      ...tickets.map((row) => ({ kind: "SUPPORT", title: row.subject, amount: null, row })),
-      ...transactions.map((row) => ({ kind: "WALLET", title: row.transaction_type, amount: row.amount, row })),
-      ...purchases.map((row) => ({ kind: "PURCHASE", title: `${row.quantity || 1} seedling purchase`, amount: row.amount, row })),
-      ...cashins.map((row) => ({ kind: "CASHIN", title: row.reference_no || "Cash-in request", amount: row.amount, row })),
-      ...notifications.map((row) => ({ kind: "NOTICE", title: row.title || "Notification", amount: null, row })),
+      ...tickets.map((row) => ({ kind: "SUPPORT", title: row.subject, amount: null, row, href: "/admin/support" })),
+      ...transactions.map((row) => ({ kind: "WALLET", title: row.transaction_type, amount: row.amount, row, href: "/admin/audit" })),
+      ...purchases.map((row) => ({ kind: "PURCHASE", title: `${row.quantity || 1} seedling purchase`, amount: row.amount, row, href: "/admin/purchases" })),
+      ...cashins.map((row) => ({ kind: "CASHIN", title: row.reference_no || "Cash-in request", amount: row.amount, row, href: "/admin/treasury" })),
+      ...notifications.map((row) => ({ kind: "NOTICE", title: row.title || "Notification", amount: null, row, href: "/admin/notifications" })),
     ].sort((a, b) => new Date(b.row.created_at || 0).getTime() - new Date(a.row.created_at || 0).getTime());
   }, [tickets, transactions, purchases, cashins, notifications]);
 
@@ -72,82 +82,149 @@ export default function AdminActivityPage() {
     });
   }, [activityRows, profiles, search, kind]);
 
+  function countFor(key: string) {
+    if (key === "ALL") return activityRows.length;
+    return activityRows.filter((row) => row.kind === key).length;
+  }
+
+  const selectedCategory = categories.find((category) => category.key === kind) || categories[0];
+
   return (
-    <main className="min-h-screen bg-[#04140d] text-white">
-      <section className="border-b border-white/10 px-6 py-8 md:px-10">
-        <div className="mx-auto max-w-7xl">
-          <div className="flex flex-wrap items-start justify-between gap-5">
+    <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
+      <div className="mx-auto w-full max-w-[1500px] px-4 py-4 lg:px-6">
+        <section className="relative overflow-hidden rounded-[2rem] border border-white/20 p-6 shadow-sm lg:p-8">
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/forest-bg.jpg')" }} />
+          <div className="absolute inset-0 bg-gradient-to-r from-green-950/90 via-green-900/66 to-green-950/18" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/10" />
+
+          <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.35em] text-green-300">SUR ALOESWOOD ADMIN</p>
-              <h1 className="mt-4 text-4xl font-black md:text-6xl">Activity Center</h1>
+              <p className="text-xs font-black uppercase tracking-[0.32em] text-white/75">SUR Aloeswood Admin</p>
+              <h1 className="mt-4 max-w-3xl text-4xl font-black leading-tight text-white lg:text-6xl">
+                Activity Center
+              </h1>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-white/78 lg:text-base">
+                Categorized operational history for support, wallet, purchase, cash-in, and system notices.
+              </p>
             </div>
-            <button onClick={loadActivity} className="rounded-2xl bg-green-500 px-5 py-3 text-sm font-black text-green-950">Refresh</button>
-          </div>
-          {message && <div className="mt-4 rounded-2xl border border-yellow-300/30 bg-yellow-400/15 px-5 py-4 text-sm font-bold text-yellow-100">{message}</div>}
-        </div>
-      </section>
 
-      <section className="mx-auto grid max-w-7xl gap-5 px-6 py-8 md:grid-cols-5 md:px-10">
-        <Metric title="Support" value={String(tickets.length)} />
-        <Metric title="Wallet TX" value={String(transactions.length)} />
-        <Metric title="Purchases" value={String(purchases.length)} />
-        <Metric title="Cash-In" value={String(cashins.length)} />
-        <Metric title="Notices" value={String(notifications.length)} />
-      </section>
-
-      <section className="mx-auto max-w-7xl px-6 pb-16 md:px-10">
-        <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-3xl font-black">Activity Feed</h2>
             <div className="flex flex-wrap gap-3">
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search..." className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none" />
-              <select value={kind} onChange={(e) => setKind(e.target.value)} className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none">
-                <option value="ALL">All</option>
-                <option value="SUPPORT">Support</option>
-                <option value="WALLET">Wallet</option>
-                <option value="PURCHASE">Purchase</option>
-                <option value="CASHIN">Cash-In</option>
-                <option value="NOTICE">Notice</option>
-              </select>
+              <button onClick={loadActivity} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 shadow-sm hover:bg-white/90">
+                Refresh
+              </button>
+              <Link href="/admin/dashboard" className="rounded-2xl border border-white/25 bg-white/15 px-5 py-3 text-sm font-black text-white backdrop-blur hover:bg-white/20">
+                Dashboard
+              </Link>
             </div>
           </div>
 
-          <div className="mt-6 space-y-3">
-            {filtered.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-black/25 p-6 text-sm font-bold text-white/60">No activity found.</div>
-            ) : filtered.slice(0, 200).map((item) => {
-              const profile = findProfile(item.row.profile_id, profiles);
-              return (
-                <div key={`${item.kind}-${item.row.id}`} className="rounded-2xl border border-white/10 bg-black/25 p-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="relative z-10 mt-8 grid gap-3 md:grid-cols-3">
+            <HeroStat label="Total Activity" value={String(activityRows.length)} />
+            <HeroStat label="Selected View" value={selectedCategory.title} />
+            <HeroStat label="Visible Items" value={String(filtered.length)} />
+          </div>
+
+          {message && (
+            <div className="relative z-10 mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-900">
+              {message}
+            </div>
+          )}
+        </section>
+
+        <section className="grid gap-5 py-5 lg:grid-cols-[0.36fr_1fr]">
+          <aside className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
+            <h2 className="text-2xl font-black text-slate-950">Categories</h2>
+            <p className="mt-1 text-sm text-slate-600">Filter activity by workspace.</p>
+
+            <div className="mt-5 grid gap-3">
+              {categories.map((category) => (
+                <button
+                  key={category.key}
+                  onClick={() => setKind(category.key)}
+                  className={`rounded-2xl border p-4 text-left transition ${
+                    kind === category.key
+                      ? "border-emerald-400 bg-emerald-50 shadow-sm"
+                      : "border-slate-200 bg-slate-50 hover:border-emerald-200 hover:bg-emerald-50/50"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-lg font-black text-green-200">{item.title}</p>
-                      <p className="mt-1 text-sm text-white/60">{item.kind} • {profileName(profile)} • {profile?.email || "-"}</p>
+                      <p className="text-sm font-black text-slate-950">{category.title}</p>
+                      <p className="mt-1 text-xs font-bold text-slate-500">{category.detail}</p>
                     </div>
-                    <span className={`rounded-full border px-3 py-1 text-xs font-black ${statusClass(item.row.status || (item.row.is_read ? "READ" : "UNREAD"))}`}>
-                      {item.row.status || (item.row.is_read === undefined ? "LOGGED" : item.row.is_read ? "READ" : "UNREAD")}
+                    <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-900">
+                      {countFor(category.key)}
                     </span>
                   </div>
-                  <p className="mt-3 text-sm text-white/70">{item.row.description || item.row.message || item.row.payment_reference || item.row.reference_no || "-"}</p>
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                    <p className="text-xs font-bold text-white/50">{formatDate(item.row.created_at)}</p>
-                    {item.amount !== null && <p className="text-sm font-black text-green-300">{peso(item.amount)}</p>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
+                </button>
+              ))}
+            </div>
+          </aside>
+
+          <section className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-2xl font-black text-slate-950">{selectedCategory.title}</h2>
+                <p className="mt-1 text-sm text-slate-600">{selectedCategory.detail}</p>
+              </div>
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search activity"
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
+              />
+            </div>
+
+            <div className="mt-5 space-y-3">
+              {filtered.length === 0 ? (
+                <Empty text="No activity found." />
+              ) : (
+                filtered.slice(0, 200).map((item) => {
+                  const profile = findProfile(item.row.profile_id, profiles);
+                  const status = item.row.status || (item.row.is_read === undefined ? "LOGGED" : item.row.is_read ? "READ" : "UNREAD");
+                  return (
+                    <Link key={`${item.kind}-${item.row.id}`} href={item.href} className="block rounded-2xl border border-slate-200 bg-slate-50 p-5 transition hover:border-emerald-200 hover:bg-emerald-50/60">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-lg font-black text-slate-950">{item.title}</p>
+                          <p className="mt-1 text-sm font-bold text-slate-600">
+                            {item.kind} - {profileName(profile)} - {profile?.email || "-"}
+                          </p>
+                        </div>
+                        <span className={`rounded-full border px-3 py-1 text-xs font-black ${statusClass(status)}`}>
+                          {status}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-sm leading-6 text-slate-600">{item.row.description || item.row.message || item.row.payment_reference || item.row.reference_no || "-"}</p>
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-400">{formatDate(item.row.created_at)}</p>
+                        {item.amount !== null && <p className="text-sm font-black text-emerald-700">{peso(item.amount)}</p>}
+                      </div>
+                    </Link>
+                  );
+                })
+              )}
+            </div>
+          </section>
+        </section>
+      </div>
     </main>
   );
 }
 
-function Metric({ title, value }: { title: string; value: string }) {
+function HeroStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-5 shadow-2xl">
-      <p className="text-xs font-black uppercase tracking-wide text-green-100/60">{title}</p>
-      <p className="mt-3 truncate text-xl font-black text-green-300">{value}</p>
+    <div className="rounded-2xl border border-white/20 bg-white/16 p-4 backdrop-blur">
+      <p className="text-xs font-black uppercase tracking-wide text-white/65">{label}</p>
+      <p className="mt-2 truncate text-2xl font-black text-white">{value}</p>
+    </div>
+  );
+}
+
+function Empty({ text }: { text: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm font-bold text-slate-500">
+      {text}
     </div>
   );
 }
