@@ -1,10 +1,8 @@
+import { peso as formatPeso } from "@/app/lib/business/rules";
+
 export type AnyRow = Record<string, any>;
 
-export const peso = (value: any) =>
-  `₱${Number(value || 0).toLocaleString("en-PH", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+export const peso = formatPeso;
 
 export const formatDate = (value?: string | null) => {
   if (!value) return "-";
@@ -55,7 +53,7 @@ export const adminLinks = [
 ];
 
 export const investorLinks = [
-  { href: "/investor/marketplace", title: "Buy Seedlings", desc: "Purchase ₱14,000 AG seedlings" },
+  { href: "/investor/marketplace", title: "Buy Seedlings", desc: "Purchase PHP 25,000 co-planter packages" },
   { href: "/investor/my-trees", title: "My AG Trees", desc: "AG codes, DENR tags, GPS and photos" },
   { href: "/tree", title: "Tree Registry", desc: "Public tree portfolio view" },
   { href: "/investor/timeline", title: "Timeline", desc: "Growth and plantation timeline" },
@@ -64,7 +62,7 @@ export const investorLinks = [
   { href: "/plantation", title: "Plantation", desc: "Farms and legal documents" },
   { href: "/investor/wallet", title: "Wallet", desc: "Balance, cash-in, transactions" },
   { href: "/investor/referrals", title: "Referrals", desc: "Referral link and bonuses" },
-  { href: "/investor/recovery", title: "Recovery Fund", desc: "Recovery fund ledger" },
+  { href: "/investor/recovery", title: "Recovery Fund", desc: "Termination-aware recovery ledger" },
   { href: "/investor/support", title: "Support", desc: "Open and track tickets" },
   { href: "/investor/settings", title: "Settings", desc: "Profile and preferences" },
   { href: "/investor/notifications", title: "Notifications", desc: "Messages and alerts" },

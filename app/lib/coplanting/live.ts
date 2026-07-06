@@ -1,12 +1,10 @@
+import { COPLANTER_PACKAGE_PRICE, peso as formatPeso } from "@/app/lib/business/rules";
+
 export type AnyRow = Record<string, any>;
 
-export const SEEDLING_PRICE = 14000;
+export const SEEDLING_PRICE = COPLANTER_PACKAGE_PRICE;
 
-export const peso = (value: any) =>
-  `₱${Number(value || 0).toLocaleString("en-PH", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+export const peso = formatPeso;
 
 export const formatDate = (value?: string | null) => {
   if (!value) return "-";

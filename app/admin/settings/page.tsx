@@ -3,6 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
 import { formatDate, getPublicSupportContacts, statusClass, type AnyRow } from "@/app/lib/settings/preferences";
+import {
+  ANNUAL_MAINTENANCE_FEE,
+  COPLANTER_PACKAGE_PRICE,
+  MAINTENANCE_YEARS,
+  RECOVERY_FUND_ALLOCATION,
+  peso,
+  recoveryTerminationNotice,
+} from "@/app/lib/business/rules";
 
 export default function AdminSettingsPage() {
   const [profiles, setProfiles] = useState<AnyRow[]>([]);
@@ -231,7 +239,10 @@ export default function AdminSettingsPage() {
         <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
           <h2 className="text-3xl font-black">Production Controls</h2>
           <div className="mt-6 space-y-3 text-sm leading-7 text-white/70">
-            <p>Seedling price: ₱14,000 per tree.</p>
+            <p>Co-planter package price: {peso(COPLANTER_PACKAGE_PRICE)}.</p>
+            <p>Annual maintenance: {peso(ANNUAL_MAINTENANCE_FEE)} per year for {MAINTENANCE_YEARS} years.</p>
+            <p>Recovery fund allocation: {peso(RECOVERY_FUND_ALLOCATION)} per paid co-planter.</p>
+            <p>{recoveryTerminationNotice}</p>
             <p>AG tree codes are generated after admin approval.</p>
             <p>Legal documents marked visible appear on the plantation page.</p>
             <p>Support tickets are managed in Admin Support Center.</p>

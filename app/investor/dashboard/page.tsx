@@ -4,8 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
 import { investorLinks, formatDate, peso, statusClass, type AnyRow } from "@/app/lib/dashboard/nav";
-
-const SEEDLING_PRICE = 14000;
+import { COPLANTER_PACKAGE_PRICE, projectionDisclaimer } from "@/app/lib/business/rules";
 
 export default function InvestorDashboardPage() {
   const [email, setEmail] = useState("");
@@ -73,7 +72,7 @@ export default function InvestorDashboardPage() {
   const pendingPurchases = purchases.filter((p) => String(p.status || "").toUpperCase() === "PENDING").length;
   const unread = notifications.filter((n) => !n.is_read).length;
   const openTickets = tickets.filter((t) => String(t.status || "").toUpperCase() === "OPEN").length;
-  const portfolioValue = trees.length * SEEDLING_PRICE;
+  const portfolioValue = trees.length * COPLANTER_PACKAGE_PRICE;
   const referralLink = typeof window !== "undefined" && profile?.referral_code ? `${window.location.origin}/register?ref=${profile.referral_code}` : "";
 
   return (
@@ -83,7 +82,7 @@ export default function InvestorDashboardPage() {
           <div>
             <p className="text-sm font-black uppercase tracking-[0.3em] text-green-300">SUR ALOESWOOD CO-PLANTER</p>
             <h1 className="mt-3 text-4xl font-black lg:text-6xl">Co-Planter Dashboard</h1>
-            <p className="mt-3 max-w-3xl text-green-100/80">Open every co-planter feature from this dashboard.</p>
+            <p className="mt-3 max-w-3xl text-green-100/80">Open every co-planter feature from this dashboard, including wallet ledger, tree records, support, certificates, recovery policy, and marketplace requests.</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <Link href="/investor/marketplace" className="rounded-2xl bg-green-500 px-5 py-3 text-sm font-black text-green-950">Buy Seedlings</Link>
@@ -164,6 +163,11 @@ export default function InvestorDashboardPage() {
               ))}
               {logs.length === 0 && <Empty text="No growth updates yet." />}
             </div>
+          </div>
+
+          <div className="rounded-[2rem] border border-yellow-300/20 bg-yellow-400/[0.07] p-6 shadow-2xl">
+            <h2 className="text-2xl font-black text-yellow-100">Transparency Notice</h2>
+            <p className="mt-3 text-sm leading-7 text-yellow-50/75">{projectionDisclaimer}</p>
           </div>
         </div>
       </section>

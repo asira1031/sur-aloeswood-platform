@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
 import { statusClass, type AnyRow } from "@/app/lib/coplanting/ui";
+import { DIRECT_REFERRAL_INCENTIVE, peso } from "@/app/lib/business/rules";
 
 export default function ReferralsPage() {
   const [email, setEmail] = useState("");
@@ -55,7 +56,7 @@ export default function ReferralsPage() {
           <div>
             <p className="text-sm font-black uppercase tracking-[0.3em] text-green-300">SUR Aloeswood</p>
             <h1 className="mt-3 text-4xl font-black lg:text-6xl">Referral Center</h1>
-            <p className="mt-3 max-w-3xl text-green-100/80">₱3,000 referral bonus is only after referred co-planter is paid, approved, and KYC-approved.</p>
+            <p className="mt-3 max-w-3xl text-green-100/80">{peso(DIRECT_REFERRAL_INCENTIVE)} referral incentive is credited only after the referred co-planter is paid, approved, and KYC-approved.</p>
           </div>
           <Link href="/investor/dashboard" className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-sm font-black">Dashboard</Link>
         </div>
@@ -71,7 +72,7 @@ export default function ReferralsPage() {
       <section className="grid gap-5 px-6 py-8 md:grid-cols-3 lg:px-14">
         <Card title="Referral Code" value={profile?.referral_code || "Pending"} />
         <Card title="Total Referrals" value={String(referrals.length)} />
-        <Card title="Qualified Bonus" value={`₱${(qualified.length * 3000).toLocaleString("en-PH")}`} />
+        <Card title="Qualified Bonus" value={peso(qualified.length * DIRECT_REFERRAL_INCENTIVE)} />
       </section>
 
       <section className="grid gap-6 px-6 pb-16 lg:grid-cols-[0.8fr_1.2fr] lg:px-14">

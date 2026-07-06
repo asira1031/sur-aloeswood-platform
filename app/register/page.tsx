@@ -3,6 +3,15 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
+import {
+  ANNUAL_MAINTENANCE_FEE,
+  COPLANTER_PACKAGE_PRICE,
+  MAINTENANCE_YEARS,
+  RECOVERY_FUND_ALLOCATION,
+  DIRECT_REFERRAL_INCENTIVE,
+  peso,
+  projectionDisclaimer,
+} from "@/app/lib/business/rules";
 
 function makeReferralCode(name: string) {
   const prefix = String(name || "SUR").replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 4).padEnd(4, "X");
@@ -47,7 +56,7 @@ export default function RegisterPage() {
         mobile_number: mobile.trim() || null,
         mobile: mobile.trim() || null,
         address: address.trim() || null,
-        role: "COPLANTER",
+        role: "INVESTOR",
         account_status: "PENDING",
         kyc_status: "PENDING",
         membership_status: "PENDING",
@@ -59,10 +68,26 @@ export default function RegisterPage() {
       .maybeSingle();
 
     if (profileError || !profile) {
-      setMessage(profileError?.message || "Registration failed.");
-      setBusy(false);
-      return;
-    }
+  console.error("PROFILE INSERT ERROR:", profileError);
+  console.error("PROFILE INSERT PAYLOAD:", {
+    full_name: fullName.trim(),
+    email: cleanEmail,
+    mobile_number: mobile.trim() || null,
+    mobile: mobile.trim() || null,
+    address: address.trim() || null,
+    role: "INVESTOR",
+    account_status: "PENDING",
+    kyc_status: "PENDING",
+    membership_status: "PENDING",
+    wallet_balance: 0,
+    referral_code: referralCode,
+    referred_by: referredBy.trim() || referralFromUrl || null,
+  });
+
+  setMessage(profileError?.message || "Registration failed.");
+  setBusy(false);
+  return;
+}
 
     await supabase.from("wallets").insert({ profile_id: profile.id, balance: 0 });
 
@@ -124,13 +149,16 @@ export default function RegisterPage() {
             </div>
 
             <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-6 shadow-2xl">
-              <h2 className="text-2xl font-black">Rules</h2>
+              <h2 className="text-2xl font-black">Co-Planter Rules</h2>
               <div className="mt-4 space-y-2 text-sm leading-6 text-white/70">
                 <p>Account starts as PENDING.</p>
                 <p>KYC starts as PENDING.</p>
                 <p>Wallet is created automatically.</p>
-                <p>Seedling price is ₱14,000 per tree.</p>
-                <p>No guaranteed returns.</p>
+                <p>Package price is {peso(COPLANTER_PACKAGE_PRICE)} per co-planter package.</p>
+                <p>Referral incentive target is {peso(DIRECT_REFERRAL_INCENTIVE)} after qualification and approval.</p>
+                <p>Recovery fund allocation is {peso(RECOVERY_FUND_ALLOCATION)} per paid registration.</p>
+                <p>Maintenance fund is {peso(ANNUAL_MAINTENANCE_FEE)} yearly for {MAINTENANCE_YEARS} years.</p>
+                <p>{projectionDisclaimer}</p>
               </div>
             </div>
           </div>

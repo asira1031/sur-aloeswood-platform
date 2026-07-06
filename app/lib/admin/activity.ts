@@ -1,3 +1,5 @@
+import { peso as formatPeso } from "@/app/lib/business/rules";
+
 export type AnyRow = Record<string, any>;
 
 export const formatDate = (value?: string | null) => {
@@ -7,8 +9,7 @@ export const formatDate = (value?: string | null) => {
   return d.toLocaleString("en-PH");
 };
 
-export const peso = (value: any) =>
-  `₱${Number(value || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export const peso = formatPeso;
 
 export const pick = (row: AnyRow, keys: string[], fallback = "-") => {
   for (const key of keys) {

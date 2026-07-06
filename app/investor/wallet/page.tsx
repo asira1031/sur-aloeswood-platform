@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
+import { peso, platformMoneyNotice } from "@/app/lib/business/rules";
 
 type Profile = {
   id: string;
@@ -42,11 +43,15 @@ type WalletTransaction = {
   created_at: string | null;
 };
 
-const peso = (value: number | null | undefined) =>
-  `₱${Number(value || 0).toLocaleString("en-PH", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+type CashinRequest = {
+  id: string;
+  profile_id: string;
+  amount: number | null;
+  reference_no: string | null;
+  description: string | null;
+  status: string | null;
+  created_at: string | null;
+};
 
 const normalize = (value?: string | null) => String(value || "").toUpperCase();
 
@@ -70,6 +75,7 @@ export default function InvestorWalletPage() {
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccount[]>([]);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
+  const [cashinRequests, setCashinRequests] = useState<CashinRequest[]>([]);
 
   const [cashInAmount, setCashInAmount] = useState("");
   const [cashInReference, setCashInReference] = useState("");
@@ -83,14 +89,10 @@ export default function InvestorWalletPage() {
   const [noticeType, setNoticeType] = useState<"success" | "error" | "info">("info");
 
   const pendingCashIn = useMemo(() => {
-    return transactions
-      .filter(
-        (tx) =>
-          normalize(tx.transaction_type) === "CASH_IN_REQUEST" &&
-          normalize(tx.status) === "PENDING"
-      )
-      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
-  }, [transactions]);
+    return cashinRequests
+      .filter((request) => normalize(request.status) === "PENDING")
+      .reduce((sum, request) => sum + Number(request.amount || 0), 0);
+  }, [cashinRequests]);
 
   const pendingWithdraw = useMemo(() => {
     return transactions
@@ -145,6 +147,7 @@ export default function InvestorWalletPage() {
       setWallet(null);
       setLinkedAccounts([]);
       setTransactions([]);
+      setCashinRequests([]);
       setLoading(false);
       showNotice("No co-planter profile found for this email.", "error");
       return;
@@ -213,10 +216,24 @@ export default function InvestorWalletPage() {
       return;
     }
 
+    const { data: cashinRows, error: cashinError } = await supabase
+      .from("cashin_requests")
+      .select("id, profile_id, amount, reference_no, description, status, created_at")
+      .eq("profile_id", profileRow.id)
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    if (cashinError) {
+      setLoading(false);
+      showNotice(cashinError.message, "error");
+      return;
+    }
+
     setProfile(profileRow as Profile);
     setWallet(walletRow);
     setLinkedAccounts((linkedRows || []) as LinkedAccount[]);
     setTransactions((transactionRows || []) as WalletTransaction[]);
+    setCashinRequests((cashinRows || []) as CashinRequest[]);
     setLoading(false);
   }
 
@@ -242,11 +259,13 @@ export default function InvestorWalletPage() {
 
     setSubmittingCashIn(true);
 
-    const { error } = await supabase.from("wallet_transactions").insert({
+    const referenceNo = cashInReference.trim();
+
+    const { error } = await supabase.from("cashin_requests").insert({
       profile_id: profile.id,
-      transaction_type: "CASH_IN_REQUEST",
       amount,
-      description: `Cash-in request submitted by co-planter. Payment reference: ${cashInReference.trim()}`,
+      reference_no: referenceNo,
+      description: `Cash-in submitted by co-planter. Admin treasury must verify the buyer-side payment reference before crediting the platform ledger.`,
       status: "PENDING",
     });
 
@@ -327,9 +346,10 @@ export default function InvestorWalletPage() {
                 Wallet Center
               </h1>
               <p className="mt-4 max-w-3xl text-sm leading-7 text-green-50/80 md:text-base">
-                Load your live wallet, submit cash-in requests, request withdrawals, review payout
-                accounts, and monitor all wallet transaction activity.
+                Load your platform ledger, submit cash-in records, request withdrawals, review payout
+                accounts, and monitor wallet transaction activity.
               </p>
+              <p className="mt-3 max-w-3xl text-xs leading-6 text-yellow-100/75">{platformMoneyNotice}</p>
             </div>
 
             <div className="flex flex-wrap gap-3">
