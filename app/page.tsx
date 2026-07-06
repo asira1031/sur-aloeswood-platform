@@ -88,7 +88,7 @@ export default function Home() {
             <Link href="/login" className="rounded-full border border-white/70 bg-white/90 px-5 py-3 text-sm font-black text-blue-900 shadow-sm backdrop-blur hover:bg-blue-50">
               Co-Planter Login
             </Link>
-            <Link href="/admin/login" className="rounded-full bg-emerald-700 px-5 py-3 text-sm font-black text-white shadow-lg hover:bg-emerald-800">
+            <Link href="/admin-login" className="rounded-full bg-emerald-700 px-5 py-3 text-sm font-black text-white shadow-lg hover:bg-emerald-800">
               Admin Login
             </Link>
             <Link href="/gardener/login" className="rounded-full bg-amber-500 px-5 py-3 text-sm font-black text-white shadow-lg hover:bg-amber-600">
@@ -128,7 +128,7 @@ export default function Home() {
               <Link href="/login" className="rounded-2xl border border-white bg-white px-8 py-4 text-lg font-black text-blue-900 shadow-lg hover:bg-blue-50">
                 Co-Planter Login
               </Link>
-              <Link href="/admin/login" className="rounded-2xl bg-emerald-700 px-8 py-4 text-lg font-black text-white shadow-lg hover:bg-emerald-800">
+              <Link href="/admin-login" className="rounded-2xl bg-emerald-700 px-8 py-4 text-lg font-black text-white shadow-lg hover:bg-emerald-800">
                 Admin Login
               </Link>
               <Link href="/gardener/login" className="rounded-2xl bg-amber-500 px-8 py-4 text-lg font-black text-white shadow-lg hover:bg-amber-600">
