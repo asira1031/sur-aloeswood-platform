@@ -1,0 +1,25 @@
+{
+  "name": "SUR Aloeswood",
+  "short_name": "SUR Aloeswood",
+  "description": "SUR Aloeswood Co-Planter Management Platform",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#06170f",
+  "theme_color": "#06170f",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/sur-logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/sur-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
