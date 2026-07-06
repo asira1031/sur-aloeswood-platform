@@ -95,19 +95,22 @@ export default function RegisterPage() {
       <section className="relative z-10 mx-auto grid min-h-[calc(100vh-92px)] w-full max-w-7xl gap-8 px-5 pb-10 lg:grid-cols-[0.82fr_1.18fr] lg:px-12">
         <aside className="flex flex-col justify-center">
           <p className="w-fit rounded-full border border-white/20 bg-white/14 px-5 py-2 text-sm font-black text-emerald-100 backdrop-blur">
-            Direct Registration
-          </p>
-          <h2 className="mt-6 max-w-xl text-5xl font-black leading-tight lg:text-7xl">
-            Create once,
-            <span className="block text-emerald-300">then login directly.</span>
-          </h2>
-          <p className="mt-6 max-w-xl text-base leading-8 text-white/78">
-            No email OTP or confirmation step for now. The platform creates the login account and co-planter profile in one flow.
-          </p>
+  Co-Planter Registration
+</p>
+
+<h2 className="mt-6 max-w-xl text-5xl font-black leading-tight lg:text-7xl">
+  <span className="block">Begin Your</span>
+  <span className="block text-emerald-300">Co-Planting</span>
+  <span className="block">Journey Today.</span>
+</h2>
+
+<p className="mt-6 max-w-xl text-base leading-8 text-white/78">
+  Create your Co-Planter account to access your personalized plantation dashboard, monitor tree growth, manage certificates, and stay connected with every stage of your agarwood journey.
+</p>
 
           <div className="mt-8 grid gap-3 sm:grid-cols-2">
-            <StepPill active={step === "FORM"} label="1" text="Details" />
-            <StepPill active={step === "DONE"} label="2" text="Ready" />
+            <StepPill active={step === "FORM"} label="1" text="Create Account" />
+<StepPill active={step === "DONE"} label="2" text="Access Dashboard" />
           </div>
         </aside>
 
