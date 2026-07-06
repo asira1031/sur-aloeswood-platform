@@ -1,4 +1,5 @@
 import Link from "next/link";
+import InstallAppButton from "@/app/components/InstallAppButton";
 
 const treeScales = [
   0.65, 0.82, 1.05, 0.74, 1.18, 0.92, 0.7, 1.12, 0.86, 1.01,
@@ -97,6 +98,7 @@ export default function Home() {
             <Link href="/register" className="rounded-full bg-green-600 px-5 py-3 text-sm font-black text-white shadow-lg hover:bg-green-700">
               Register
             </Link>
+            <InstallAppButton />
           </div>
         </nav>
 
