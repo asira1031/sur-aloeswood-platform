@@ -92,8 +92,8 @@ export default function Home() {
             <Link href="/admin-login" className="rounded-full bg-emerald-700 px-5 py-3 text-sm font-black text-white shadow-lg hover:bg-emerald-800">
               Admin Login
             </Link>
-            <Link href="/gardener/login" className="rounded-full bg-amber-500 px-5 py-3 text-sm font-black text-white shadow-lg hover:bg-amber-600">
-              Gardener Login
+            <Link href="/farmer/register" className="rounded-full bg-amber-500 px-5 py-3 text-sm font-black text-white shadow-lg hover:bg-amber-600">
+              Farmer Registration
             </Link>
             <Link href="/register" className="rounded-full bg-green-600 px-5 py-3 text-sm font-black text-white shadow-lg hover:bg-green-700">
               Register
@@ -133,7 +133,7 @@ export default function Home() {
               <Link href="/admin-login" className="rounded-2xl bg-emerald-700 px-8 py-4 text-lg font-black text-white shadow-lg hover:bg-emerald-800">
                 Admin Login
               </Link>
-              <Link href="/gardener/login" className="rounded-2xl bg-amber-500 px-8 py-4 text-lg font-black text-white shadow-lg hover:bg-amber-600">
+              <Link href="/farmer/register" className="rounded-2xl bg-amber-500 px-8 py-4 text-lg font-black text-white shadow-lg hover:bg-amber-600">
                 Gardener Login
               </Link>
             </div>
