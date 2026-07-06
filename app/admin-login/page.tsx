@@ -1,98 +1,88 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import { usePathname, useRouter } from "next/navigation";
-import {
-  clearSurSession,
-  getAuthenticatedProfile,
-  getRoleRoute,
-  saveSurSession,
-} from "@/app/lib/auth/session";
+import Link from "next/link";
+import { useState } from "react";
+import { saveSurSession } from "@/app/lib/auth/session";
 
-const PUBLIC_ADMIN_PAGES = ["/admin/login"];
+const ADMIN_WHITELIST = [
+  "asira1031@gmail.com",
+  "direktny1@gmail.com",
+  "ymbcareerdevelopment@gmail.com",
+  "rozendalerepolidon424@gmail.com",
+  "donnabelabaloscabrido72@gmail.com",
+];
 
-function normalizeRole(role?: string | null) {
-  return String(role || "").toUpperCase().replace("CO_PLANTER", "COPLANTER");
-}
+export default function AdminLoginPage() {
+  const [email, setEmail] = useState("");
+  const [message, setMessage] = useState("");
 
-function isBlocked(status?: string | null) {
-  return ["PENDING", "UNDER_REVIEW", "SUSPENDED", "BLOCKED", "REJECTED", "ARCHIVED"].includes(
-    String(status || "PENDING").toUpperCase()
-  );
-}
+  function login() {
+    const cleanEmail = email.toLowerCase().trim();
 
-export default function AdminLayout({ children }: { children: ReactNode }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const [allowed, setAllowed] = useState(false);
-  const [checking, setChecking] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function verifyAdminAccess() {
-      if (PUBLIC_ADMIN_PAGES.includes(pathname)) {
-        if (mounted) {
-          setAllowed(true);
-          setChecking(false);
-        }
-        return;
-      }
-
-      setChecking(true);
-
-      const profile = await getAuthenticatedProfile();
-
-      if (!profile) {
-        clearSurSession();
-        router.replace(`/login?next=${encodeURIComponent(pathname)}`);
-        return;
-      }
-
-      const role = normalizeRole(profile.role);
-
-      if (!["ADMIN", "SUPER_ADMIN", "STAFF"].includes(role)) {
-        saveSurSession(profile);
-        router.replace(getRoleRoute(profile.role));
-        return;
-      }
-
-      if (isBlocked(profile.account_status)) {
-        clearSurSession();
-        router.replace("/unauthorized");
-        return;
-      }
-
-      saveSurSession(profile);
-
-      if (mounted) {
-        setAllowed(true);
-        setChecking(false);
-      }
+    if (!cleanEmail) {
+      setMessage("Please enter your admin email.");
+      return;
     }
 
-    verifyAdminAccess();
+    if (!ADMIN_WHITELIST.includes(cleanEmail)) {
+      setMessage("This email is not authorized for Admin access.");
+      return;
+    }
 
-    return () => {
-      mounted = false;
-    };
-  }, [pathname, router]);
+    saveSurSession({
+      id: `admin-${cleanEmail}`,
+      email: cleanEmail,
+      full_name: "SUR Administrator",
+      role: "ADMIN",
+      account_status: "ACTIVE",
+    });
 
-  if (checking || !allowed) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-[#06170f] p-6 text-white">
-        <div className="rounded-[2rem] border border-white/10 bg-white/10 p-8 text-center shadow-2xl">
-          <p className="text-xs font-black uppercase tracking-[0.3em] text-green-200">
-            SUR Aloeswood Admin
-          </p>
-          <h1 className="mt-4 text-3xl font-black">Checking access</h1>
-          <p className="mt-3 text-sm text-white/70">
-            Verifying your admin account before opening the workspace.
-          </p>
-        </div>
-      </main>
-    );
+    window.location.href = "/admin/dashboard";
   }
 
-  return <>{children}</>;
+  return (
+    <main className="min-h-screen bg-[#06170f] text-white flex items-center justify-center p-6">
+      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/10 p-8 shadow-2xl backdrop-blur-xl">
+        <p className="text-xs font-black uppercase tracking-[0.35em] text-green-300">
+          SUR ALOESWOOD
+        </p>
+
+        <h1 className="mt-4 text-4xl font-black">
+          Admin Login
+        </h1>
+
+        <p className="mt-2 text-sm text-white/70">
+          Authorized administrators only.
+        </p>
+
+        <input
+          className="mt-8 w-full rounded-2xl bg-white px-5 py-4 font-bold text-slate-900 outline-none"
+          placeholder="Admin Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") login();
+          }}
+        />
+
+        {message && (
+          <div className="mt-4 rounded-2xl bg-red-500/20 p-4 text-sm font-bold text-red-100">
+            {message}
+          </div>
+        )}
+
+        <button
+          onClick={login}
+          className="mt-6 w-full rounded-2xl bg-green-600 py-4 font-black hover:bg-green-700"
+        >
+          Login as Admin
+        </button>
+
+        <div className="mt-6 flex justify-between text-sm font-bold">
+          <Link href="/">Home</Link>
+          <Link href="/login">Co-Planter Login</Link>
+        </div>
+      </div>
+    </main>
+  );
 }
