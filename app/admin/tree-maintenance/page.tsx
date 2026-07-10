@@ -1,311 +1,131 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase } from "@/app/lib/supabase/client";
-import { formatDate, type AnyRow } from "@/app/lib/dashboard/nav";
 
-const controlClass =
-  "rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400";
+type AnyRow = Record<string, any>;
 
-const peso = (value: any) =>
-  `PHP ${Number(value || 0).toLocaleString("en-PH", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+type MaintenanceRecord = {
+  order_id: string;
+  order_created_at: string | null;
+  payment_reference: string;
+  service_type: string;
+  payment_status: string;
+  work_status: string;
+  amount: number | null;
+  customer_note: string | null;
+  admin_note: string | null;
+  paid_at: string | null;
+  assigned_at: string | null;
+  tree_id: string;
+  tree_code: string;
+  tree_status: string;
+  denr_tag_number: string | null;
+  owner_profile_id: string;
+  owner_name: string;
+  owner_email: string;
+  assignment_id: string | null;
+  assignment_status: string | null;
+  gardener_id: string | null;
+  caretaker_name: string | null;
+  caretaker_email: string | null;
+  latest_log_id: string | null;
+  latest_log_status: string | null;
+  photo_url: string | null;
+  serial_photo_url: string | null;
+  submitted_denr_tag_number: string | null;
+  latest_log_created_at: string | null;
+};
 
-const standardServiceAmounts: Record<string, number> = {
+const prices: Record<string, number> = {
   ARTICLE_VI_MONTHLY: 200,
   ARTICLE_VI_ONE_TIME: 5000,
   PHOTO_DOCUMENTATION: 150,
   TREE_GUARD: 250,
   SOIL_PREMIUM: 450,
+  TREE_PLANTING_ASSIGNMENT: 0,
 };
 
 export default function AdminTreeMaintenancePage() {
-  const [profiles, setProfiles] = useState<AnyRow[]>([]);
-  const [trees, setTrees] = useState<AnyRow[]>([]);
+  const [records, setRecords] = useState<MaintenanceRecord[]>([]);
   const [gardeners, setGardeners] = useState<AnyRow[]>([]);
-  const [assignments, setAssignments] = useState<AnyRow[]>([]);
-  const [orders, setOrders] = useState<AnyRow[]>([]);
-  const [wallets, setWallets] = useState<AnyRow[]>([]);
-  const [selectedProfileId, setSelectedProfileId] = useState("");
+  const [selectedOwnerId, setSelectedOwnerId] = useState("");
   const [selectedTreeId, setSelectedTreeId] = useState("");
   const [selectedOrderId, setSelectedOrderId] = useState("");
   const [selectedGardenerId, setSelectedGardenerId] = useState("");
   const [adminNote, setAdminNote] = useState("");
-  const [quoteAmount, setQuoteAmount] = useState("");
+  const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [search, setSearch] = useState("");
 
   useEffect(() => {
-    loadMaintenance();
+    void loadRecords();
   }, []);
 
-  useEffect(() => {
-    const selected = orders.find((order) => order.id === selectedOrderId);
-    const amount = Number(selected?.amount || 0);
-    setQuoteAmount(amount > 0 ? String(amount) : "");
-  }, [orders, selectedOrderId]);
-
-  async function loadMaintenance() {
+  async function loadRecords() {
     setLoading(true);
     setMessage("");
 
-    const [{ data: profileRows, error }, { data: treeRows }, { data: gardenerRows }, { data: assignmentRows }, { data: walletRows }, orderResult] =
-      await Promise.all([
-        supabase
-          .from("profiles")
-          .select("id, full_name, email, role, account_status, kyc_status, membership_status, created_at")
-          .in("role", ["COPLANTER", "INVESTOR"])
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("tree_registry")
-          .select("id, profile_id, purchase_id, tree_code, denr_tag_number, species, status, gps_lat, gps_lng, planted_at, created_at")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("gardeners")
-          .select("id, full_name, email, mobile, status, created_at")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("gardener_assignments")
-          .select("id, gardener_id, tree_id, maintenance_order_id, profile_id, tree_code, task_type, notes, status, assigned_at, updated_at")
-          .order("assigned_at", { ascending: false }),
-        supabase.from("wallets").select("id, profile_id, balance, updated_at"),
-        supabase
-          .from("maintenance_orders")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(1000),
-      ]);
+    const [recordResult, gardenerResult] = await Promise.all([
+      supabase.rpc("admin_tree_maintenance_records"),
+      supabase.from("gardeners").select("id, full_name, email, mobile, status, created_at").order("created_at", { ascending: false }),
+    ]);
 
-    setLoading(false);
-
-    if (error) {
-      setMessage(error.message);
+    if (recordResult.error) {
+      setRecords([]);
+      setMessage(`${recordResult.error.message}. Run admin-tree-maintenance-rpc.sql in Supabase.`);
+      setLoading(false);
       return;
     }
 
-    if (orderResult.error) {
-      setMessage(`${orderResult.error.message}. Run the maintenance_orders SQL first before using paid maintenance assignment.`);
-    }
+    const safeRecords = ((recordResult.data || []) as AnyRow[]).map(mapRecord);
+    const safeGardeners = ((gardenerResult.data || []) as AnyRow[]);
 
-    const safeProfiles = (profileRows || []) as AnyRow[];
-    const safeTrees = (treeRows || []) as AnyRow[];
-    const safeGardeners = (gardenerRows || []) as AnyRow[];
-    const safeAssignments = (assignmentRows || []) as AnyRow[];
-    const safeWallets = (walletRows || []) as AnyRow[];
-    const safeOrders = normalizeMaintenanceOrders((orderResult.data || []) as AnyRow[]);
-    const firstProfileId = selectedProfileId || safeProfiles.find((profile) => safeTrees.some((tree) => tree.profile_id === profile.id))?.id || safeProfiles[0]?.id || "";
-    const firstTreeId = selectedTreeId || safeTrees.find((tree) => tree.profile_id === firstProfileId)?.id || "";
-    const firstOrderId = selectedOrderId || safeOrders.find((order) => order.tree_id === firstTreeId && isOrderAssignable(order))?.id || safeOrders.find((order) => order.tree_id === firstTreeId)?.id || "";
-
-    setProfiles(safeProfiles);
-    setTrees(safeTrees);
+    setRecords(safeRecords);
     setGardeners(safeGardeners);
-    setAssignments(safeAssignments);
-    setWallets(safeWallets);
-    setOrders(safeOrders);
-    setSelectedProfileId(firstProfileId);
-    setSelectedTreeId(firstTreeId);
-    setSelectedOrderId(firstOrderId);
-    setSelectedGardenerId((current) => current || safeGardeners.find((gardener) => String(gardener.status || "").toUpperCase() === "ACTIVE")?.id || safeGardeners[0]?.id || "");
-  }
-
-  function selectProfile(profileId: string) {
-    const firstTree = trees.find((tree) => tree.profile_id === profileId);
-    const firstTreeOrder = orders.find((order) => order.tree_id === firstTree?.id && isOrderAssignable(order)) || orders.find((order) => order.tree_id === firstTree?.id);
-    setSelectedProfileId(profileId);
-    setSelectedTreeId(firstTree?.id || "");
-    setSelectedOrderId(firstTreeOrder?.id || "");
-    setMessage("");
-  }
-
-  function selectTree(treeId: string) {
-    const firstOrder = orders.find((order) => order.tree_id === treeId && isOrderAssignable(order)) || orders.find((order) => order.tree_id === treeId);
-    setSelectedTreeId(treeId);
-    setSelectedOrderId(firstOrder?.id || "");
-    setMessage("");
-  }
-
-  async function markOrderPaid(order: AnyRow) {
-    setSaving(true);
-    setMessage("");
-
-    const charged = await chargeMaintenanceOrder(order);
-    if (!charged.ok) {
-      setSaving(false);
-      setMessage(charged.message);
-      return;
-    }
-
-    setMessage(`Maintenance payment deducted from wallet. New customer wallet balance: ${peso(charged.nextBalance)}.`);
-    await loadMaintenance();
-    setSaving(false);
-  }
-
-  async function chargeMaintenanceOrder(order: AnyRow) {
-    if (!selectedProfile) {
-      return { ok: false, message: "Select a co-planter before charging this order.", nextBalance: 0 };
-    }
-
-    if (String(order.payment_status || "").toUpperCase() === "PAID") {
-      return { ok: true, message: "Order already paid.", nextBalance: Number(walletForProfile(selectedProfile.id)?.balance || 0) };
-    }
-
-    const wallet = walletForProfile(selectedProfile.id);
-    const amount = getOrderAmount(order);
-    const balance = Number(wallet?.balance || 0);
-
-    if (!wallet?.id) {
-      return { ok: false, message: "No wallet found for this co-planter. Create or repair the wallet before charging this order.", nextBalance: balance };
-    }
-
-    if (amount <= 0) {
-      return { ok: false, message: "This order has no valid price yet.", nextBalance: balance };
-    }
-
-    if (balance < amount) {
-      return { ok: false, message: `Insufficient customer wallet balance. Wallet has ${peso(balance)} but this service costs ${peso(amount)}.`, nextBalance: balance };
-    }
-
-    const nextBalance = balance - amount;
-    const { error: walletError } = await supabase
-      .from("wallets")
-      .update({ balance: nextBalance, updated_at: new Date().toISOString() })
-      .eq("id", wallet.id);
-
-    if (walletError) {
-      return { ok: false, message: walletError.message, nextBalance: balance };
-    }
-
-    await supabase.from("profiles").update({ wallet_balance: nextBalance }).eq("id", selectedProfile.id);
-    await supabase.from("wallet_transactions").insert({
-      profile_id: selectedProfile.id,
-      transaction_type: "MAINTENANCE_PAYMENT",
-      amount,
-      description: `${serviceLabel(order.service_type)} payment deducted by admin for ${order.tree_code || selectedTree?.tree_code || "AG Tree"}. Reference: ${order.payment_reference || order.id}.`,
-      status: "APPROVED",
-    });
-
-    const { error } = await supabase
-      .from("maintenance_orders")
-      .update({
-        payment_status: "PAID",
-        work_status: "READY_FOR_ASSIGNMENT",
-        paid_at: new Date().toISOString(),
-        amount,
-        admin_note: adminNote.trim() || order.admin_note || null,
-      })
-      .eq("id", order.id);
-
-    if (error) {
-      return { ok: false, message: error.message, nextBalance };
-    }
-
-    return { ok: true, message: "Maintenance order charged.", nextBalance };
-  }
-
-  async function saveQuote(order: AnyRow) {
-    setMessage("");
-
-    if (!selectedProfile || !selectedTree) {
-      setMessage("Select a co-planter and AG tree first.");
-      return;
-    }
-
-    const amount = Number(quoteAmount || 0);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setMessage("Enter a valid quote amount before saving.");
-      return;
-    }
-
-    setSaving(true);
-
-    const { error } = await supabase
-      .from("maintenance_orders")
-      .update({
-        amount,
-        payment_status: "PENDING_PAYMENT",
-        work_status: "PENDING_PAYMENT",
-        admin_note: adminNote.trim() || order.admin_note || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", order.id);
-
-    if (error) {
-      setSaving(false);
-      setMessage(error.message);
-      return;
-    }
-
-    await supabase.from("notifications").insert({
-      profile_id: selectedProfile.id,
-      title: "Maintenance quote ready",
-      message: `${serviceLabel(order.service_type)} for ${selectedTree.tree_code || "your AG tree"} is quoted at ${peso(amount)}. You can pay it from Care Services using your SUR wallet.`,
-      is_read: false,
-    });
-
-    setSaving(false);
-    setMessage(`Quote saved at ${peso(amount)}. Co-planter can now pay from wallet.`);
-    await loadMaintenance();
+    setSelectedOwnerId((current) => current || safeRecords[0]?.owner_profile_id || "");
+    setSelectedTreeId((current) => current || safeRecords[0]?.tree_id || "");
+    setSelectedOrderId((current) => current || safeRecords[0]?.order_id || "");
+    setSelectedGardenerId((current) => current || safeGardeners.find((g) => String(g.status || "").toUpperCase() === "ACTIVE")?.id || safeGardeners[0]?.id || "");
+    setLoading(false);
   }
 
   async function assignCaretaker() {
-    setMessage("");
-
-    if (!selectedProfile || !selectedTree) {
-      setMessage("Select a co-planter and AG tree first.");
-      return;
-    }
-
     if (!selectedOrder) {
       setMessage("Select a maintenance order first.");
       return;
     }
 
     if (!selectedGardener) {
-      setMessage("Select a farmer/caretaker before assigning maintenance.");
+      setMessage("Select a caretaker first.");
       return;
     }
 
     setSaving(true);
+    setMessage("");
 
-    let orderForAssignment = selectedOrder;
-    if (!isOrderAssignable(selectedOrder)) {
-      const charged = await chargeMaintenanceOrder(selectedOrder);
-      if (!charged.ok) {
-        setSaving(false);
-        setMessage(charged.message);
-        return;
-      }
-      orderForAssignment = { ...selectedOrder, payment_status: "PAID", work_status: "READY_FOR_ASSIGNMENT", amount: getOrderAmount(selectedOrder) };
-    }
-
-    const existingAssignment = assignmentForOrder(orderForAssignment.id);
-    const assignmentPayload = {
+    const payload = {
       gardener_id: selectedGardener.id,
-      tree_id: selectedTree.id,
-      maintenance_order_id: orderForAssignment.id,
-      profile_id: selectedProfile.id,
-      tree_code: selectedTree.tree_code || null,
-      task_type: orderForAssignment.service_type || "MAINTENANCE",
-      notes: adminNote.trim() || orderForAssignment.customer_note || null,
+      tree_id: selectedOrder.tree_id,
+      maintenance_order_id: selectedOrder.order_id,
+      profile_id: selectedOrder.owner_profile_id,
+      tree_code: selectedOrder.tree_code,
+      task_type: selectedOrder.service_type,
+      notes: adminNote.trim() || selectedOrder.customer_note || null,
       status: "ASSIGNED",
       assigned_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
-    const assignmentResult = existingAssignment
-      ? await supabase.from("gardener_assignments").update(assignmentPayload).eq("id", existingAssignment.id)
-      : await supabase.from("gardener_assignments").insert(assignmentPayload);
+    const assignmentResult = selectedOrder.assignment_id
+      ? await supabase.from("gardener_assignments").update(payload).eq("id", selectedOrder.assignment_id)
+      : await supabase.from("gardener_assignments").insert(payload);
 
     if (assignmentResult.error) {
-      setSaving(false);
       setMessage(assignmentResult.error.message);
+      setSaving(false);
       return;
     }
 
@@ -316,301 +136,197 @@ export default function AdminTreeMaintenancePage() {
         work_status: "ASSIGNED",
         admin_note: adminNote.trim() || null,
         assigned_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
-      .eq("id", selectedOrder.id);
+      .eq("id", selectedOrder.order_id);
 
     if (orderError) {
-      setSaving(false);
       setMessage(orderError.message);
+      setSaving(false);
       return;
     }
 
     await supabase.from("notifications").insert({
-      profile_id: selectedProfile.id,
+      profile_id: selectedOrder.owner_profile_id,
       title: "Tree maintenance assigned",
-      message: `${selectedTree.tree_code || "Your AG tree"} paid maintenance order ${orderForAssignment.payment_reference || orderForAssignment.id} has been assigned to ${selectedGardener.full_name || selectedGardener.email}.`,
+      message: `${selectedOrder.tree_code} ${serviceLabel(selectedOrder.service_type)} has been assigned to ${selectedGardener.full_name || selectedGardener.email}.`,
       is_read: false,
     });
 
+    setMessage(`${selectedOrder.tree_code} assigned to ${selectedGardener.full_name || selectedGardener.email}.`);
     setAdminNote("");
+    await loadRecords();
     setSaving(false);
-    setMessage(`${selectedTree.tree_code || "AG Tree"} ${existingAssignment ? "assignment updated" : "maintenance order assigned"} to ${selectedGardener.full_name || selectedGardener.email}.`);
-    await loadMaintenance();
   }
 
-  function assignmentForTree(treeId?: string | null) {
-    return assignments.find((assignment) => assignment.tree_id === treeId) || null;
-  }
-
-  function assignmentForOrder(orderId?: string | null) {
-    return assignments.find((assignment) => assignment.maintenance_order_id === orderId) || null;
-  }
-
-  function gardenerForAssignment(assignment?: AnyRow | null) {
-    if (!assignment) return null;
-    return gardeners.find((gardener) => gardener.id === assignment.gardener_id) || null;
-  }
-
-  function walletForProfile(profileId?: string | null) {
-    return wallets.find((wallet) => wallet.profile_id === profileId) || null;
-  }
-
-  const filteredProfiles = useMemo(() => {
+  const filteredOwners = useMemo(() => {
     const keyword = search.toLowerCase().trim();
-    return profiles.filter((profile) => {
-      const profileTrees = trees.filter((tree) => tree.profile_id === profile.id);
-      const profileOrders = orders.filter((order) => order.profile_id === profile.id);
-      const text = `${profile.full_name || ""} ${profile.email || ""} ${profile.role || ""} ${profileTrees.map((tree) => tree.tree_code).join(" ")} ${profileOrders.map((order) => order.payment_reference).join(" ")}`.toLowerCase();
+    const owners = new Map<string, MaintenanceRecord>();
+
+    for (const record of records) {
+      if (!record.owner_profile_id) continue;
+      if (!owners.has(record.owner_profile_id)) owners.set(record.owner_profile_id, record);
+    }
+
+    return Array.from(owners.values()).filter((record) => {
+      const text = `${record.owner_name} ${record.owner_email} ${record.tree_code} ${record.payment_reference}`.toLowerCase();
       return !keyword || text.includes(keyword);
     });
-  }, [profiles, search, trees, orders]);
+  }, [records, search]);
 
-  const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) || filteredProfiles[0] || null;
-  const selectedTrees = trees.filter((tree) => tree.profile_id === selectedProfile?.id);
-  const selectedTree = trees.find((tree) => tree.id === selectedTreeId) || selectedTrees[0] || null;
-  const selectedTreeOrders = orders.filter((order) => order.tree_id === selectedTree?.id);
-  const selectedOrder = orders.find((order) => order.id === selectedOrderId) || selectedTreeOrders[0] || null;
+  const ownerRecords = records.filter((record) => record.owner_profile_id === selectedOwnerId);
+  const treeRecords = ownerRecords.filter((record) => record.tree_id);
+  const uniqueTrees = uniqueBy(treeRecords, "tree_id");
+  const selectedTreeRecords = records.filter((record) => record.tree_id === selectedTreeId);
+  const selectedOrder = records.find((record) => record.order_id === selectedOrderId) || selectedTreeRecords[0] || records[0] || null;
   const selectedGardener = gardeners.find((gardener) => gardener.id === selectedGardenerId) || null;
-  const selectedWallet = walletForProfile(selectedProfile?.id);
-  const activeGardeners = gardeners.filter((gardener) => String(gardener.status || "").toUpperCase() === "ACTIVE");
-  const selectedAssignment = assignmentForTree(selectedTree?.id);
-  const assignedGardener = gardenerForAssignment(selectedAssignment);
-  const selectedOrderAssignment = assignmentForOrder(selectedOrder?.id);
-  const selectedOrderGardener = gardenerForAssignment(selectedOrderAssignment);
-  const paidOrders = orders.filter(isOrderAssignable).length;
-  const pendingPaymentOrders = orders.filter((order) => String(order.payment_status || "").toUpperCase() === "PENDING_PAYMENT").length;
-  const primaryAssignLabel = saving
-    ? "Processing..."
-    : selectedOrderAssignment
-      ? "Update Assigned Caretaker"
-      : selectedOrder && isOrderAssignable(selectedOrder)
-        ? "Assign Caretaker"
-        : "Charge Wallet & Assign Caretaker";
+  const paidCount = records.filter((record) => normalize(record.payment_status) === "PAID").length;
+  const readyCount = records.filter((record) => ["PAID", "READY_FOR_ASSIGNMENT"].includes(normalize(record.payment_status)) || normalize(record.work_status) === "READY_FOR_ASSIGNMENT").length;
+  const assignedCount = records.filter((record) => record.assignment_id).length;
+  const proofReviewCount = records.filter((record) => normalize(record.assignment_status) === "PENDING_ADMIN_REVIEW" || normalize(record.latest_log_status) === "PENDING_ADMIN_REVIEW").length;
 
   return (
-    <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
-      <div className="mx-auto w-full max-w-[1580px] px-4 py-4 lg:px-6">
+    <main className="min-h-screen bg-[#eef6ef] text-slate-950">
+      <div className="mx-auto max-w-[1500px] px-4 py-4 lg:px-6">
         <section className="relative overflow-hidden rounded-[2rem] border border-white/25 p-6 shadow-sm lg:p-8">
           <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/forest-bg.jpg')" }} />
-          <div className="absolute inset-0 bg-gradient-to-r from-emerald-950/94 via-emerald-900/70 to-slate-950/24" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/10" />
+          <div className="absolute inset-0 bg-gradient-to-r from-emerald-950/94 via-emerald-900/75 to-slate-950/30" />
 
           <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.32em] text-emerald-100">Admin Tree Maintenance</p>
-              <h1 className="mt-4 max-w-4xl text-4xl font-black leading-tight text-white lg:text-6xl">
-                Paid Maintenance Assignment
-              </h1>
-              <p className="mt-4 max-w-3xl text-sm leading-7 text-white/78 lg:text-base">
-                Select a co-planter, choose one AG tree, verify the paid maintenance order, then assign a farmer or caretaker. Unpaid orders stay blocked from assignment.
+              <p className="text-xs font-black uppercase tracking-[0.32em] text-emerald-100">SUR Aloeswood Admin</p>
+              <h1 className="mt-4 text-4xl font-black text-white lg:text-6xl">Tree Maintenance</h1>
+              <p className="mt-4 max-w-3xl text-sm leading-7 text-white/78">
+                Paid customer care requests become caretaker assignments. This page reads maintenance orders and assignment records directly.
               </p>
             </div>
-
             <div className="flex flex-wrap gap-3">
-              <button onClick={loadMaintenance} disabled={loading} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 shadow-sm hover:bg-white/90 disabled:opacity-60">
+              <button onClick={loadRecords} disabled={loading} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 shadow-sm disabled:opacity-60">
                 {loading ? "Refreshing..." : "Refresh"}
               </button>
-              <Link href="/investor/care-services" className="rounded-2xl border border-white/25 bg-white/15 px-5 py-3 text-sm font-black text-white backdrop-blur hover:bg-white/20">
-                Customer Order Page
-              </Link>
-              <Link href="/admin/dashboard" className="rounded-2xl border border-white/25 bg-white/15 px-5 py-3 text-sm font-black text-white backdrop-blur hover:bg-white/20">
-                Dashboard
-              </Link>
+              <Link href="/admin/purchases" className="rounded-2xl border border-white/25 bg-white/15 px-5 py-3 text-sm font-black text-white backdrop-blur">Seedling List</Link>
+              <Link href="/admin/dashboard" className="rounded-2xl border border-white/25 bg-white/15 px-5 py-3 text-sm font-black text-white backdrop-blur">Dashboard</Link>
             </div>
           </div>
 
           <div className="relative z-10 mt-8 grid gap-3 md:grid-cols-4">
-            <HeroStat label="Maintenance Orders" value={String(orders.length)} />
-            <HeroStat label="Paid / Assignable" value={String(paidOrders)} />
-            <HeroStat label="Pending Payment" value={String(pendingPaymentOrders)} />
-            <HeroStat label="Assignments" value={String(assignments.length)} />
+            <HeroStat label="Maintenance Orders" value={String(records.length)} />
+            <HeroStat label="Paid / Ready" value={String(Math.max(paidCount, readyCount))} />
+            <HeroStat label="Assigned Tasks" value={String(assignedCount)} />
+            <HeroStat label="Proof Review" value={String(proofReviewCount)} />
           </div>
 
-          {message && (
-            <div className="relative z-10 mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-900">
-              {message}
-            </div>
-          )}
+          {message && <div className="relative z-10 mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-900">{message}</div>}
         </section>
 
-        <section className="mt-5 grid gap-5 xl:grid-cols-3">
-          <Panel title="1. Co-Planters" subtitle="Select the customer account with maintenance orders.">
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search co-planter, tree, or reference" className={controlClass} />
-            <div className="mt-4 max-h-[620px] space-y-3 overflow-auto pr-1">
-              {filteredProfiles.length === 0 ? (
-                <Empty text="No co-planter accounts found." />
-              ) : filteredProfiles.map((profile) => {
-                const treeCount = trees.filter((tree) => tree.profile_id === profile.id).length;
-                const orderCount = orders.filter((order) => order.profile_id === profile.id).length;
-                const selected = selectedProfile?.id === profile.id;
+        <section className="mt-5 grid gap-5 xl:grid-cols-[0.8fr_0.9fr_1.3fr]">
+          <Panel title="1. Customers" subtitle="Owners with maintenance orders.">
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search owner, email, AG code, reference" className={controlClass} />
+            <div className="mt-4 max-h-[650px] space-y-3 overflow-auto pr-1">
+              {filteredOwners.length === 0 ? (
+                <Empty text="No maintenance records found. Run the RPC SQL if database has rows." />
+              ) : filteredOwners.map((owner) => {
+                const orderCount = records.filter((record) => record.owner_profile_id === owner.owner_profile_id).length;
+                const isSelected = selectedOwnerId === owner.owner_profile_id;
                 return (
-                  <button
-                    key={profile.id}
-                    onClick={() => selectProfile(profile.id)}
-                    className={`w-full rounded-2xl border p-4 text-left transition ${selected ? "border-emerald-400 bg-emerald-50 shadow-sm" : "border-slate-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/50"}`}
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-lg font-black text-slate-950">{profile.full_name || profile.email}</p>
-                        <p className="mt-1 text-sm font-bold text-slate-600">{profile.email}</p>
-                      </div>
-                      <Badge value={`${orderCount} ORDER${orderCount === 1 ? "" : "S"}`} />
-                    </div>
-                    <p className="mt-3 text-xs font-bold text-slate-500">{treeCount} tree(s) - KYC: {profile.kyc_status || "PENDING"}</p>
+                  <button key={owner.owner_profile_id} onClick={() => {
+                    const first = records.find((record) => record.owner_profile_id === owner.owner_profile_id);
+                    setSelectedOwnerId(owner.owner_profile_id);
+                    setSelectedTreeId(first?.tree_id || "");
+                    setSelectedOrderId(first?.order_id || "");
+                  }} className={`w-full rounded-2xl border p-4 text-left ${isSelected ? "border-emerald-400 bg-emerald-50 ring-2 ring-emerald-100" : "border-slate-200 bg-white hover:border-emerald-200"}`}>
+                    <p className="text-lg font-black text-slate-950">{owner.owner_name || "Unknown owner"}</p>
+                    <p className="mt-1 text-sm font-bold text-slate-600">{owner.owner_email || "-"}</p>
+                    <p className="mt-3 text-xs font-black text-emerald-700">{orderCount} maintenance order(s)</p>
                   </button>
                 );
               })}
             </div>
           </Panel>
 
-          <Panel title="2. AG Trees" subtitle="Choose the specific tree and paid order.">
-            {!selectedProfile ? (
-              <Empty text="Select a co-planter first." />
-            ) : selectedTrees.length === 0 ? (
-              <Empty text="No AG trees found for this co-planter." />
+          <Panel title="2. AG Trees / Orders" subtitle="Select one order to assign.">
+            {uniqueTrees.length === 0 ? (
+              <Empty text="Select a customer with records." />
             ) : (
-              <div className="max-h-[690px] space-y-3 overflow-auto pr-1">
-                {selectedTrees.map((tree) => {
-                  const assignment = assignmentForTree(tree.id);
-                  const caretaker = gardenerForAssignment(assignment);
-                  const treeOrders = orders.filter((order) => order.tree_id === tree.id);
-                  const selected = selectedTree?.id === tree.id;
+              <div className="max-h-[710px] space-y-3 overflow-auto pr-1">
+                {uniqueTrees.map((tree) => {
+                  const orders = records.filter((record) => record.tree_id === tree.tree_id);
+                  const isSelected = selectedTreeId === tree.tree_id;
                   return (
-                    <button
-                      key={tree.id}
-                      onClick={() => selectTree(tree.id)}
-                      className={`w-full rounded-2xl border p-4 text-left transition ${selected ? "border-amber-300 bg-amber-50 shadow-sm" : "border-slate-200 bg-white hover:border-amber-200 hover:bg-amber-50/50"}`}
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-lg font-black text-slate-950">{tree.tree_code || "Pending AG Code"}</p>
-                          <p className="mt-1 text-sm font-bold text-slate-600">{tree.denr_tag_number || "DENR pending"}</p>
-                        </div>
-                        <Badge value={`${treeOrders.length} ORDER${treeOrders.length === 1 ? "" : "S"}`} />
+                    <div key={tree.tree_id} className={`rounded-2xl border p-4 ${isSelected ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`}>
+                      <button onClick={() => {
+                        setSelectedTreeId(tree.tree_id);
+                        setSelectedOrderId(orders[0]?.order_id || "");
+                      }} className="w-full text-left">
+                        <p className="text-lg font-black text-slate-950">{tree.tree_code}</p>
+                        <p className="mt-1 text-xs font-bold text-slate-500">{tree.denr_tag_number || "DENR pending"} - {tree.tree_status}</p>
+                      </button>
+                      <div className="mt-3 space-y-2">
+                        {orders.map((order) => (
+                          <button key={order.order_id} onClick={() => {
+                            setSelectedTreeId(order.tree_id);
+                            setSelectedOrderId(order.order_id);
+                          }} className={`w-full rounded-xl border px-3 py-2 text-left text-xs font-black ${selectedOrderId === order.order_id ? "border-emerald-300 bg-white text-emerald-800" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
+                            <div className="flex justify-between gap-2">
+                              <span>{serviceLabel(order.service_type)}</span>
+                              <span>{order.payment_status}</span>
+                            </div>
+                            <p className="mt-1 text-slate-500">{money(order.amount)} - {order.work_status}</p>
+                          </button>
+                        ))}
                       </div>
-                      <div className="mt-3 grid gap-2 text-xs font-bold text-slate-500 sm:grid-cols-2">
-                        <span>Planted: {formatDate(tree.planted_at)}</span>
-                        <span>Caretaker: {caretaker?.full_name || caretaker?.email || "Unassigned"}</span>
-                      </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
             )}
           </Panel>
 
-          <Panel title="3. Payment + Assignment Control" subtitle="One order creates one caretaker task. Reassigning updates the same task, not a duplicate.">
-            {!selectedTree ? (
-              <Empty text="Select an AG tree first." />
+          <Panel title="3. Assign / Review" subtitle="Create or update one caretaker task for the selected order.">
+            {!selectedOrder ? (
+              <Empty text="Select an order first." />
             ) : (
-              <div className="space-y-4">
-                <div className="rounded-[1.5rem] border border-emerald-100 bg-emerald-50/75 p-4">
-                  <p className="text-xs font-black uppercase tracking-wide text-emerald-700">Selected Tree</p>
-                  <h2 className="mt-2 text-2xl font-black text-slate-950">{selectedTree.tree_code || "AG Tree"}</h2>
-                  <p className="mt-2 text-sm font-bold text-slate-600">{selectedProfile?.full_name || selectedProfile?.email}</p>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    <Info label="DENR Tag" value={selectedTree.denr_tag_number || "Pending"} />
-                    <Info label="Current Tree Caretaker" value={assignedGardener?.full_name || assignedGardener?.email || "Unassigned"} />
-                    <Info label="Customer Wallet" value={peso(selectedWallet?.balance)} />
-                  </div>
-                </div>
-
-                <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4">
-                  <p className="text-xs font-black uppercase tracking-wide text-slate-500">Care Service Pricing</p>
-                  <div className="mt-3 grid gap-2 text-xs font-bold text-slate-600 sm:grid-cols-2">
-                    <span className="rounded-xl bg-emerald-50 px-3 py-2 text-emerald-800">Monthly Maintenance: PHP 200.00</span>
-                    <span className="rounded-xl bg-amber-50 px-3 py-2 text-amber-800">One-Time All-in: PHP 5,000.00</span>
-                    <span className="rounded-xl bg-cyan-50 px-3 py-2 text-cyan-800">Photo Documentation: PHP 150.00</span>
-                    <span className="rounded-xl bg-lime-50 px-3 py-2 text-lime-800">Tree Guard: PHP 250.00</span>
-                    <span className="rounded-xl bg-stone-50 px-3 py-2 text-stone-800 sm:col-span-2">Soil Premium: PHP 450.00</span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-black uppercase tracking-wide text-slate-500">Maintenance Order</label>
-                  <select value={selectedOrder?.id || ""} onChange={(event) => setSelectedOrderId(event.target.value)} className={`mt-2 w-full ${controlClass}`}>
-                    <option value="">Select paid order</option>
-                    {selectedTreeOrders.map((order) => (
-                      <option key={order.id} value={order.id}>
-                        {serviceLabel(order.service_type)} - {orderAmountLabel(order)} - {order.payment_status || "PENDING"} - {order.payment_reference || order.id}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {selectedOrder ? (
-                  <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-lg font-black text-slate-950">{serviceLabel(selectedOrder.service_type)}</p>
-                        <p className="mt-1 text-sm font-bold text-slate-600">{selectedOrder.payment_reference || selectedOrder.id}</p>
-                      </div>
-                      <Badge value={selectedOrder.payment_status || "PENDING"} />
+              <div className="space-y-5">
+                <div className="rounded-[1.5rem] border border-emerald-100 bg-emerald-50 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-2xl font-black text-slate-950">{selectedOrder.tree_code}</p>
+                      <p className="mt-1 text-sm font-bold text-slate-600">{selectedOrder.owner_name} - {selectedOrder.owner_email}</p>
                     </div>
-                    <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                      <Info label={isQuotedService(selectedOrder.service_type) ? "Quote Amount" : "Amount"} value={orderAmountLabel(selectedOrder)} />
-                      <Info label="Work Status" value={selectedOrder.work_status || "PENDING"} />
-                      <Info label="Created" value={formatDate(selectedOrder.created_at)} />
-                      <Info label="Paid At" value={formatDate(selectedOrder.paid_at)} />
-                      <Info label="Assigned To" value={selectedOrderGardener?.full_name || selectedOrderGardener?.email || "Not assigned yet"} />
-                      <Info label="Assignment Record" value={selectedOrderAssignment ? "Existing task will be updated" : "New task will be created"} />
-                    </div>
-                    {selectedOrder.customer_note && (
-                      <p className="mt-3 rounded-2xl border border-white bg-white px-4 py-3 text-sm font-bold text-slate-600">{selectedOrder.customer_note}</p>
-                    )}
-                    {shouldQuoteOrder(selectedOrder) && (
-                      <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 p-4">
-                        <p className="text-xs font-black uppercase tracking-wide text-amber-700">Admin Quote Required</p>
-                        <p className="mt-2 text-sm font-bold leading-6 text-amber-900">
-                          Set the service price after field review. The co-planter will see a Pay from Wallet button after this quote is saved.
-                        </p>
-                        <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
-                          <input
-                            type="number"
-                            min="1"
-                            step="0.01"
-                            value={quoteAmount}
-                            onChange={(event) => setQuoteAmount(event.target.value)}
-                            placeholder="Quote amount"
-                            className={controlClass}
-                          />
-                          <button onClick={() => saveQuote(selectedOrder)} disabled={saving} className="rounded-2xl bg-amber-500 px-5 py-3 text-sm font-black text-slate-950 hover:bg-amber-400 disabled:opacity-60">
-                            Save Quote
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                    <Badge value={selectedOrder.payment_status || "PENDING"} />
                   </div>
-                ) : (
-                  <Empty text="No maintenance order found for this tree yet." />
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <Info label="Service" value={serviceLabel(selectedOrder.service_type)} />
+                    <Info label="Amount" value={money(selectedOrder.amount)} />
+                    <Info label="Work Status" value={selectedOrder.work_status || "-"} />
+                    <Info label="Assignment" value={selectedOrder.assignment_status || "Not assigned"} />
+                    <Info label="Caretaker" value={selectedOrder.caretaker_name || "Unassigned"} />
+                    <Info label="Latest Proof" value={proofLabel(selectedOrder)} />
+                  </div>
+                </div>
+
+                {needsProofReview(selectedOrder) && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">
+                    This task has proof issues. Tree photo, tag photo, and visible tag serial are required before final completion.
+                  </div>
                 )}
 
                 <div>
                   <label className="text-xs font-black uppercase tracking-wide text-slate-500">Farmer / Caretaker</label>
                   <select value={selectedGardenerId} onChange={(event) => setSelectedGardenerId(event.target.value)} className={`mt-2 w-full ${controlClass}`}>
                     <option value="">Select caretaker</option>
-                    {(activeGardeners.length ? activeGardeners : gardeners).map((gardener) => (
+                    {gardeners.map((gardener) => (
                       <option key={gardener.id} value={gardener.id}>
-                        {gardener.full_name || gardener.email} - {gardener.status || "ACTIVE"}
+                        {gardener.full_name || gardener.email} - {gardener.email}
                       </option>
                     ))}
                   </select>
                 </div>
 
-                <textarea
-                  value={adminNote}
-                  onChange={(event) => setAdminNote(event.target.value)}
-                  rows={5}
-                  placeholder="Admin note or manual payment reference"
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
-                />
+                <textarea value={adminNote} onChange={(event) => setAdminNote(event.target.value)} rows={5} placeholder="Admin note for caretaker" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
 
-                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm font-bold leading-6 text-emerald-900">
-                  Flow: this button charges the customer's SUR wallet if needed, then creates one caretaker task for this order. If this order already has a task, it updates the same task instead of duplicating it.
-                </div>
-
-                <button onClick={assignCaretaker} disabled={saving || !selectedOrder || shouldQuoteOrder(selectedOrder)} className="w-full rounded-2xl bg-emerald-600 px-6 py-5 text-base font-black text-white shadow-sm hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500">
-                  {primaryAssignLabel}
+                <button onClick={assignCaretaker} disabled={saving || !selectedGardenerId} className="w-full rounded-2xl bg-emerald-600 px-6 py-5 text-base font-black text-white shadow-sm hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500">
+                  {saving ? "Saving..." : selectedOrder.assignment_id ? "Update Caretaker Assignment" : "Assign Caretaker"}
                 </button>
               </div>
             )}
@@ -619,6 +335,85 @@ export default function AdminTreeMaintenancePage() {
       </div>
     </main>
   );
+}
+
+const controlClass = "rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400";
+
+function mapRecord(row: AnyRow): MaintenanceRecord {
+  return {
+    order_id: row.order_id,
+    order_created_at: row.order_created_at || null,
+    payment_reference: row.payment_reference || "",
+    service_type: row.service_type || "MAINTENANCE",
+    payment_status: row.payment_status || "PENDING",
+    work_status: row.work_status || "PENDING",
+    amount: row.amount ?? prices[row.service_type] ?? null,
+    customer_note: row.customer_note || null,
+    admin_note: row.admin_note || null,
+    paid_at: row.paid_at || null,
+    assigned_at: row.assigned_at || null,
+    tree_id: row.tree_id || "",
+    tree_code: row.tree_code || "AG tree",
+    tree_status: row.tree_status || "PENDING",
+    denr_tag_number: row.denr_tag_number || null,
+    owner_profile_id: row.owner_profile_id || "",
+    owner_name: row.owner_name || "Unknown owner",
+    owner_email: row.owner_email || "",
+    assignment_id: row.assignment_id || null,
+    assignment_status: row.assignment_status || null,
+    gardener_id: row.gardener_id || null,
+    caretaker_name: row.caretaker_name || null,
+    caretaker_email: row.caretaker_email || null,
+    latest_log_id: row.latest_log_id || null,
+    latest_log_status: row.latest_log_status || null,
+    photo_url: row.photo_url || null,
+    serial_photo_url: row.serial_photo_url || null,
+    submitted_denr_tag_number: row.submitted_denr_tag_number || null,
+    latest_log_created_at: row.latest_log_created_at || null,
+  };
+}
+
+function normalize(value?: string | null) {
+  return String(value || "").toUpperCase();
+}
+
+function uniqueBy<T extends Record<string, any>>(rows: T[], key: string) {
+  const map = new Map<string, T>();
+  for (const row of rows) {
+    const id = String(row[key] || "");
+    if (id && !map.has(id)) map.set(id, row);
+  }
+  return Array.from(map.values());
+}
+
+function serviceLabel(value?: string | null) {
+  return String(value || "Maintenance").replaceAll("_", " ");
+}
+
+function money(value?: number | null) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
+  return `PHP ${Number(value).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function hasCompleteProof(record: MaintenanceRecord) {
+  return Boolean(record.photo_url && record.serial_photo_url && record.submitted_denr_tag_number);
+}
+
+function needsProofReview(record: MaintenanceRecord) {
+  return ["COMPLETED", "DONE", "SUBMITTED", "PENDING_ADMIN_REVIEW"].includes(normalize(record.assignment_status)) && !hasCompleteProof(record);
+}
+
+function proofLabel(record: MaintenanceRecord) {
+  if (hasCompleteProof(record)) return record.latest_log_status || "PENDING_ADMIN_REVIEW";
+  if (needsProofReview(record)) return "MISSING PROOF";
+  return "AWAITING PROOF";
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" });
 }
 
 function HeroStat({ label, value }: { label: string; value: string }) {
@@ -644,65 +439,23 @@ function Info({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-white bg-white p-3">
       <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="mt-1 break-words text-xs font-black text-slate-950">{value}</p>
+      <p className="mt-1 break-words text-xs font-black text-slate-950">{value || "-"}</p>
     </div>
   );
 }
 
 function Badge({ value }: { value: string }) {
-  const status = String(value || "").toUpperCase();
+  const status = normalize(value);
   const style =
-    status.includes("PAID") || status.includes("READY") || status.includes("APPROVED") || status.includes("ORDER")
+    status.includes("PAID") || status.includes("ASSIGNED") || status.includes("READY")
       ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-      : status.includes("TERMINATED") || status.includes("REJECTED") || status.includes("SUSPENDED") || status.includes("FAILED")
+      : status.includes("MISSING") || status.includes("FAILED") || status.includes("REJECTED")
         ? "border-red-200 bg-red-50 text-red-800"
         : "border-amber-200 bg-amber-50 text-amber-800";
 
-  return <span className={`rounded-full border px-3 py-1 text-xs font-black ${style}`}>{value}</span>;
+  return <span className={`rounded-full border px-3 py-1 text-xs font-black ${style}`}>{String(value || "-").toUpperCase()}</span>;
 }
 
 function Empty({ text }: { text: string }) {
-  return (
-    <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 p-5 text-sm font-bold text-slate-500">
-      {text}
-    </div>
-  );
-}
-
-function serviceLabel(value?: string | null) {
-  return String(value || "Maintenance").replaceAll("_", " ");
-}
-
-function isQuotedService(value?: string | null) {
-  return !standardServiceAmounts[String(value || "")];
-}
-
-function getOrderAmount(order: AnyRow) {
-  const paymentStatus = String(order.payment_status || "").toUpperCase();
-  const fixedAmount = standardServiceAmounts[String(order.service_type || "")];
-  if (fixedAmount && paymentStatus !== "PAID") return fixedAmount;
-  return Number(order.amount || 0);
-}
-
-function orderAmountLabel(order: AnyRow) {
-  if (isQuotedService(order.service_type) && Number(order.amount || 0) <= 0) return "Admin quote";
-  return peso(getOrderAmount(order));
-}
-
-function normalizeMaintenanceOrders(rows: AnyRow[]) {
-  return rows.map((order) => {
-    const amount = getOrderAmount(order);
-    return amount === Number(order.amount || 0) ? order : { ...order, amount };
-  });
-}
-
-function isOrderAssignable(order: AnyRow) {
-  const paymentStatus = String(order.payment_status || "").toUpperCase();
-  const workStatus = String(order.work_status || "").toUpperCase();
-  return paymentStatus === "PAID" && workStatus !== "COMPLETED" && workStatus !== "CANCELLED";
-}
-
-function shouldQuoteOrder(order: AnyRow) {
-  const paymentStatus = String(order.payment_status || "").toUpperCase();
-  return isQuotedService(order.service_type) && (paymentStatus === "FOR_QUOTE" || Number(order.amount || 0) <= 0);
+  return <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm font-bold text-slate-500">{text}</div>;
 }

@@ -1,236 +1,136 @@
 "use client";
 
+import Link from "next/link";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
-import { formatAgCode, formatDate, getNextAgNumbers, getProfile, peso, statusClass, type AnyRow } from "@/app/lib/admin/ag-codes";
-import { buildRevenueAllocationRows } from "@/app/lib/finance/fee-distribution";
 
-function firstValue(row: AnyRow | null, keys: string[]) {
-  if (!row) return "";
-  for (const key of keys) {
-    const value = row[key];
-    if (value !== undefined && value !== null && String(value).trim()) return String(value);
-  }
-  return "";
-}
+type AnyRow = Record<string, any>;
 
-function dateOnly(value?: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
-  return date.toISOString().slice(0, 10);
-}
+type Owner = {
+  id: string;
+  name: string;
+  email: string;
+};
 
-function paymentScreenshotUrl(purchase: AnyRow | null) {
-  return firstValue(purchase, [
-    "payment_screenshot_url",
-    "payment_proof_url",
-    "proof_url",
-    "receipt_url",
-    "screenshot_url",
-    "payment_image_url",
-  ]);
-}
-
-function paymentDateValue(purchase: AnyRow | null) {
-  return firstValue(purchase, [
-    "payment_date",
-    "paid_at",
-    "proof_date",
-    "receipt_date",
-    "transaction_date",
-    "payment_created_at",
-  ]);
-}
-
-export default function AdminPurchasesPage() {
-  const [purchases, setPurchases] = useState<AnyRow[]>([]);
-  const [profiles, setProfiles] = useState<AnyRow[]>([]);
-  const [treeRegistry, setTreeRegistry] = useState<AnyRow[]>([]);
-  const [selectedProfileId, setSelectedProfileId] = useState("");
-  const [selectedPurchaseId, setSelectedPurchaseId] = useState("");
-  const [filter, setFilter] = useState("PENDING");
+export default function AdminSeedlingListsPage() {
+  const [rows, setRows] = useState<AnyRow[]>([]);
+  const [selectedOwnerId, setSelectedOwnerId] = useState("");
+  const [selectedTreeId, setSelectedTreeId] = useState("");
   const [search, setSearch] = useState("");
-  const [busyId, setBusyId] = useState("");
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
-    loadData();
+    void loadRows();
   }, []);
 
-  async function loadData() {
+  async function loadRows() {
+    setLoading(true);
     setMessage("");
 
-    const [{ data: purchaseRows, error }, { data: profileRows }, { data: treeRows }] = await Promise.all([
-      supabase.from("seedling_purchases").select("*").order("created_at", { ascending: false }),
-      supabase
-        .from("profiles")
-        .select("id, full_name, email, mobile, mobile_number, account_status, kyc_status, membership_status, role")
-        .limit(1000),
-      supabase
-        .from("tree_registry")
-        .select("id, profile_id, purchase_id, tree_code, denr_tag_number, species, status, gps_lat, gps_lng, planted_at, created_at")
-        .order("created_at", { ascending: false }),
-    ]);
+    const { data, error } = await supabase
+      .from("admin_seedling_list_view")
+      .select("*")
+      .order("tree_created_at", { ascending: false });
+
+    if (error) {
+      setRows([]);
+      setMessage(`${error.message}. Run the admin_seedling_list_view SQL first.`);
+      setLoading(false);
+      return;
+    }
+
+    const nextRows = (data || []) as AnyRow[];
+    setRows(nextRows);
+
+    const first = nextRows[0] || null;
+    setSelectedOwnerId((current) => current || first?.profile_id || "");
+    setSelectedTreeId((current) => current || first?.tree_id || "");
+
+    setLoading(false);
+  }
+
+  async function sendCaretakerAlert(row: AnyRow | null) {
+    if (!row) return;
+
+    if (!row.caretaker_profile_id) {
+      setMessage("No linked caretaker profile found. Assign or repair caretaker profile first.");
+      return;
+    }
+
+    setSending(true);
+    setMessage("");
+
+    const { error } = await supabase.from("notifications").insert({
+      profile_id: row.caretaker_profile_id,
+      title: `Action needed for ${row.tree_code}`,
+      message:
+        row.seedling_status === "CARETAKER_DONE_NEEDS_ADMIN_VERIFY"
+          ? `${row.tree_code} is marked complete but admin still needs visible tag/photo proof before tagging.`
+          : `${row.tree_code} is pending attachment. Please submit tree photo, visible tag photo, and matching AG code.`,
+      is_read: false,
+      created_at: new Date().toISOString(),
+    });
 
     if (error) {
       setMessage(error.message);
+      setSending(false);
       return;
     }
 
-    const safePurchases = (purchaseRows || []) as AnyRow[];
-    const safeProfiles = (profileRows || []) as AnyRow[];
-    setPurchases(safePurchases);
-    setProfiles(safeProfiles);
-    setTreeRegistry((treeRows || []) as AnyRow[]);
-
-    const firstProfileId = selectedProfileId || safePurchases[0]?.profile_id || "";
-    setSelectedProfileId(firstProfileId);
-    const firstPurchase = safePurchases.find((purchase) => purchase.profile_id === firstProfileId) || safePurchases[0] || null;
-    setSelectedPurchaseId(firstPurchase?.id || "");
+    setMessage(`Alert sent to ${row.caretaker_name || "caretaker"} for ${row.tree_code}.`);
+    setSending(false);
   }
 
-  function selectProfile(profileId: string) {
-    setSelectedProfileId(profileId);
-    const firstPurchase = purchases.find((purchase) => purchase.profile_id === profileId) || null;
-    setSelectedPurchaseId(firstPurchase?.id || "");
-  }
+  const owners = useMemo(() => {
+    const map = new Map<string, Owner>();
 
-  async function approvePurchase(purchase: AnyRow) {
-    setBusyId(purchase.id);
-    setMessage("");
+    rows.forEach((row) => {
+      const id = String(row.profile_id || "");
+      if (!id) return;
 
-    const quantity = Number(purchase.quantity || 0);
-    if (!purchase.profile_id || quantity <= 0) {
-      setMessage("Purchase has missing profile or quantity.");
-      setBusyId("");
-      return;
-    }
-
-    const existingForPurchase = treeRegistry.filter((tree) => tree.purchase_id === purchase.id);
-    const missingCount = Math.max(0, quantity - existingForPurchase.length);
-
-    if (missingCount > 0) {
-      const nextNumbers = getNextAgNumbers(treeRegistry, missingCount);
-      const treeRows = nextNumbers.map((num) => ({
-        profile_id: purchase.profile_id,
-        purchase_id: purchase.id,
-        tree_code: formatAgCode(num),
-        denr_tag_number: null,
-        species: "Aquilaria Malaccensis",
-        status: "REGISTERED",
-        gps_lat: null,
-        gps_lng: null,
-        planted_at: null,
-      }));
-
-      const { error: insertError } = await supabase.from("tree_registry").insert(treeRows);
-      if (insertError) {
-        setMessage(insertError.message);
-        setBusyId("");
-        return;
+      if (!map.has(id)) {
+        map.set(id, {
+          id,
+          name: row.owner_name || "Unknown Owner",
+          email: row.owner_email || "No email",
+        });
       }
-    }
-
-    const { error: updateError } = await supabase
-      .from("seedling_purchases")
-      .update({ status: "APPROVED", approved_at: new Date().toISOString() })
-      .eq("id", purchase.id);
-
-    if (updateError) {
-      setMessage(updateError.message);
-      setBusyId("");
-      return;
-    }
-
-    const profile = getProfile(purchase.profile_id, profiles);
-    const revenueAllocationRows = buildRevenueAllocationRows({
-      sourceType: "SEEDLING_PURCHASE_APPROVAL",
-      sourceId: purchase.id,
-      paymentReference: purchase.payment_reference || purchase.id,
-      profileId: purchase.profile_id,
-      customerName: profile?.full_name,
-      customerEmail: profile?.email,
-      grossAmount: Number(purchase.amount || 0),
-      earnedDate: purchase.approved_at || purchase.created_at,
     });
 
-    const { error: allocationError } = await supabase
-      .from("revenue_allocations")
-      .upsert(revenueAllocationRows, {
-        onConflict: "source_type,source_id,beneficiary_key",
-        ignoreDuplicates: true,
-      });
+    const keyword = search.toLowerCase().trim();
 
-    if (allocationError) {
-      setMessage(`Purchase approved, but finance allocation failed: ${allocationError.message}`);
-      setBusyId("");
-      return;
-    }
+    return Array.from(map.values())
+      .filter((owner) => {
+        if (!keyword) return true;
 
-    await supabase.from("notifications").insert({
-      profile_id: purchase.profile_id,
-      title: "Seedling purchase approved",
-      message: `Your seedling purchase was approved. ${quantity} AG tree code(s) were generated.`,
-      is_read: false,
-    });
+        const ownerRows = rows.filter((row) => String(row.profile_id || "") === owner.id);
+        const text = [
+          owner.name,
+          owner.email,
+          ...ownerRows.map((row) => row.tree_code),
+          ...ownerRows.map((row) => row.payment_reference),
+        ]
+          .join(" ")
+          .toLowerCase();
 
-    setMessage(`Approved. Generated ${missingCount} new AG tree code(s) and recorded automatic allocation ledger.`);
-    await loadData();
-    setBusyId("");
-  }
+        return text.includes(keyword);
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [rows, search]);
 
-  async function rejectPurchase(purchase: AnyRow) {
-    setBusyId(purchase.id);
-    setMessage("");
+  const selectedOwner = owners.find((owner) => owner.id === selectedOwnerId) || owners[0] || null;
+  const ownerRows = selectedOwner ? rows.filter((row) => String(row.profile_id || "") === selectedOwner.id) : [];
+  const selectedRow = rows.find((row) => String(row.tree_id || "") === String(selectedTreeId)) || ownerRows[0] || rows[0] || null;
 
-    const { error } = await supabase.from("seedling_purchases").update({ status: "REJECTED" }).eq("id", purchase.id);
-    if (error) {
-      setMessage(error.message);
-      setBusyId("");
-      return;
-    }
-
-    await supabase.from("notifications").insert({
-      profile_id: purchase.profile_id,
-      title: "Seedling purchase rejected",
-      message: `Your seedling purchase reference ${purchase.payment_reference || purchase.id} was rejected. Please contact support.`,
-      is_read: false,
-    });
-
-    setMessage("Purchase rejected.");
-    await loadData();
-    setBusyId("");
-  }
-
-  const accounts = useMemo(() => {
-    const purchaseProfileIds = new Set(purchases.map((purchase) => String(purchase.profile_id || "")));
-    return profiles
-      .filter((profile) => purchaseProfileIds.has(String(profile.id)))
-      .filter((profile) => {
-        const keyword = search.toLowerCase().trim();
-        const text = `${profile.full_name || ""} ${profile.email || ""}`.toLowerCase();
-        return !keyword || text.includes(keyword);
-      });
-  }, [profiles, purchases, search]);
-
-  const selectedProfile = getProfile(selectedProfileId, profiles);
-  const profilePurchases = purchases.filter((purchase) => {
-    const statusOk = filter === "ALL" || String(purchase.status || "").toUpperCase() === filter;
-    return purchase.profile_id === selectedProfileId && statusOk;
-  });
-
-  const selectedPurchase =
-    purchases.find((purchase) => purchase.id === selectedPurchaseId) ||
-    profilePurchases[0] ||
-    null;
-
-  const selectedTrees = selectedPurchase ? treeRegistry.filter((tree) => tree.purchase_id === selectedPurchase.id) : [];
-  const requestDate = dateOnly(selectedPurchase?.created_at);
-  const screenshotDate = dateOnly(paymentDateValue(selectedPurchase));
-  const hasDateMismatch = Boolean(requestDate && screenshotDate && requestDate !== screenshotDate);
-  const hasScreenshot = Boolean(paymentScreenshotUrl(selectedPurchase));
-  const pendingReviewCount = purchases.filter((purchase) => String(purchase.status || "").toUpperCase() === "PENDING").length;
+  const stats = {
+    owners: owners.length,
+    agCodes: rows.length,
+    tagged: rows.filter((row) => row.seedling_status === "TAGGED").length,
+    pending: rows.filter((row) => row.seedling_status !== "TAGGED").length,
+  };
 
   return (
     <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
@@ -238,26 +138,41 @@ export default function AdminPurchasesPage() {
         <section className="relative overflow-hidden rounded-[2rem] border border-white/20 p-6 shadow-sm lg:p-8">
           <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/forest-bg.jpg')" }} />
           <div className="absolute inset-0 bg-gradient-to-r from-green-950/92 via-green-900/70 to-green-950/22" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/10" />
 
-          <div className="relative z-10 flex flex-wrap items-start justify-between gap-5">
+          <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.35em] text-green-200">SUR ALOESWOOD ADMIN</p>
-              <h1 className="mt-4 text-4xl font-black text-white lg:text-6xl">Seedling Purchase Approval</h1>
+              <p className="text-xs font-black uppercase tracking-[0.35em] text-emerald-100">SUR Aloeswood Admin</p>
+              <h1 className="mt-4 text-4xl font-black text-white lg:text-6xl">Seedling Lists</h1>
               <p className="mt-4 max-w-3xl text-sm leading-7 text-white/80">
-                Review co-planter purchases, verify payment proof, check request-vs-payment dates, then approve and generate AG tree records.
+                Live AG code ownership, caretaker attachment, and tagging readiness.
               </p>
             </div>
-            <button onClick={loadData} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 shadow-sm hover:bg-white/90">
-              Refresh
-            </button>
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={loadRows}
+                disabled={loading}
+                className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 disabled:opacity-60"
+              >
+                {loading ? "Refreshing..." : "Refresh"}
+              </button>
+              <Link href="/admin/tree-maintenance" className="rounded-2xl border border-white/25 bg-white/15 px-5 py-3 text-sm font-black text-white backdrop-blur">
+                Tree Maintenance
+              </Link>
+              <Link href="/admin/tree-registry" className="rounded-2xl border border-white/25 bg-white/15 px-5 py-3 text-sm font-black text-white backdrop-blur">
+                Tree Registry
+              </Link>
+              <Link href="/admin/dashboard" className="rounded-2xl border border-white/25 bg-white/15 px-5 py-3 text-sm font-black text-white backdrop-blur">
+                Dashboard
+              </Link>
+            </div>
           </div>
 
           <div className="relative z-10 mt-8 grid gap-3 md:grid-cols-4">
-            <Metric title="Accounts" value={String(accounts.length)} />
-            <Metric title="Pending Review" value={String(pendingReviewCount)} />
-            <Metric title="Approved" value={String(purchases.filter((p) => String(p.status || "").toUpperCase() === "APPROVED").length)} />
-            <Metric title="Registered Trees" value={String(treeRegistry.length)} />
+            <HeroStat label="Owners" value={String(stats.owners)} />
+            <HeroStat label="AG Codes" value={String(stats.agCodes)} />
+            <HeroStat label="Tagged" value={String(stats.tagged)} />
+            <HeroStat label="Pending" value={String(stats.pending)} />
           </div>
 
           {message && (
@@ -267,38 +182,46 @@ export default function AdminPurchasesPage() {
           )}
         </section>
 
-        <section className="grid gap-4 py-5 xl:grid-cols-[0.9fr_1fr_1.2fr]">
-          <Panel title="Co-Planter Accounts" subtitle="Select who submitted the seedling request.">
+        <section className="grid gap-5 py-5 xl:grid-cols-[0.35fr_0.45fr_0.8fr]">
+          <Panel title="Owners" subtitle="Co-planters with seedling purchases and AG codes.">
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search account"
-              className="mb-4 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
+              placeholder="Search owner, email, AG code, reference"
+              className={controlClass}
             />
-            <div className="space-y-3">
-              {accounts.length === 0 ? (
-                <Empty text="No purchase accounts found." />
+
+            <div className="mt-5 max-h-[720px] space-y-3 overflow-auto pr-1">
+              {owners.length === 0 ? (
+                <Empty text="No seedling owners found. If SQL has rows, run the admin_seedling_list_view SQL and refresh." />
               ) : (
-                accounts.map((profile) => {
-                  const profilePurchaseCount = purchases.filter((purchase) => purchase.profile_id === profile.id).length;
-                  const profilePending = purchases.filter(
-                    (purchase) => purchase.profile_id === profile.id && String(purchase.status || "").toUpperCase() === "PENDING"
-                  ).length;
-                  const selected = profile.id === selectedProfileId;
+                owners.map((owner) => {
+                  const ownerAgRows = rows.filter((row) => String(row.profile_id || "") === owner.id);
+                  const pending = ownerAgRows.filter((row) => row.seedling_status !== "TAGGED").length;
+                  const selected = selectedOwner?.id === owner.id;
 
                   return (
                     <button
-                      key={profile.id}
-                      onClick={() => selectProfile(profile.id)}
-                      className={`w-full rounded-2xl border p-4 text-left transition ${
-                        selected ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-white hover:border-emerald-200"
+                      key={owner.id}
+                      onClick={() => {
+                        setSelectedOwnerId(owner.id);
+                        setSelectedTreeId(ownerAgRows[0]?.tree_id || "");
+                      }}
+                      className={`w-full rounded-2xl border p-4 text-left ${
+                        selected ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-slate-50 hover:border-emerald-200"
                       }`}
                     >
-                      <p className="text-base font-black text-slate-950">{profile.full_name || profile.email}</p>
-                      <p className="mt-1 text-xs font-bold text-slate-500">{profile.email}</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Badge value={`${profilePurchaseCount} REQUEST${profilePurchaseCount === 1 ? "" : "S"}`} />
-                        {profilePending > 0 && <Badge value={`${profilePending} PENDING`} tone="red" />}
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-lg font-black text-slate-950">{owner.name}</p>
+                          <p className="mt-1 text-xs font-bold text-slate-500">{owner.email}</p>
+                        </div>
+                        {pending > 0 && <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black text-amber-950">{pending}</span>}
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-2">
+                        <MiniMetric label="AG Codes" value={String(ownerAgRows.length)} />
+                        <MiniMetric label="Pending" value={String(pending)} />
                       </div>
                     </button>
                   );
@@ -307,158 +230,96 @@ export default function AdminPurchasesPage() {
             </div>
           </Panel>
 
-          <Panel title="Purchase / Tree List" subtitle="Select a request to review generated or pending tree records.">
-            <select
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-              className="mb-4 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
-            >
-              <option value="ALL">All requests</option>
-              <option value="PENDING">Pending</option>
-              <option value="APPROVED">Approved</option>
-              <option value="REJECTED">Rejected</option>
-            </select>
-
-            <div className="space-y-3">
-              {!selectedProfile ? (
-                <Empty text="Select a co-planter account first." />
-              ) : profilePurchases.length === 0 ? (
-                <Empty text="No purchase request under this filter." />
-              ) : (
-                profilePurchases.map((purchase) => {
-                  const generatedTrees = treeRegistry.filter((tree) => tree.purchase_id === purchase.id);
-                  const screenshot = paymentScreenshotUrl(purchase);
-                  const requestOnly = dateOnly(purchase.created_at);
-                  const proofOnly = dateOnly(paymentDateValue(purchase));
-                  const mismatch = Boolean(requestOnly && proofOnly && requestOnly !== proofOnly);
-                  const selected = purchase.id === selectedPurchase?.id;
+          <Panel title="AG Code List" subtitle="Select an AG code to inspect assignment and tagging status.">
+            {!selectedOwner ? (
+              <Empty text="Select an owner first." />
+            ) : ownerRows.length === 0 ? (
+              <Empty text="No AG codes under this owner." />
+            ) : (
+              <div className="max-h-[760px] space-y-3 overflow-auto pr-1">
+                {ownerRows.map((row) => {
+                  const selected = String(selectedRow?.tree_id || "") === String(row.tree_id || "");
 
                   return (
                     <button
-                      key={purchase.id}
-                      onClick={() => setSelectedPurchaseId(purchase.id)}
-                      className={`w-full rounded-2xl border p-4 text-left transition ${
+                      key={row.tree_id}
+                      onClick={() => setSelectedTreeId(row.tree_id)}
+                      className={`w-full rounded-2xl border p-4 text-left ${
                         selected ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-white hover:border-emerald-200"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-lg font-black text-slate-950">{purchase.quantity || 0} Seedling(s)</p>
-                          <p className="mt-1 text-xs font-bold text-slate-500">{peso(purchase.amount)} - Ref: {purchase.payment_reference || "-"}</p>
+                          <p className="text-xl font-black text-slate-950">{row.tree_code}</p>
+                          <p className="mt-1 text-xs font-bold text-slate-500">{row.tree_status || "NO STATUS"}</p>
                         </div>
-                        <span className={`rounded-full border px-3 py-1 text-xs font-black ${statusClass(purchase.status)}`}>
-                          {purchase.status || "PENDING"}
-                        </span>
+                        <Badge status={row.seedling_status} />
                       </div>
 
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Badge value={`Trees ${generatedTrees.length}/${purchase.quantity || 0}`} />
-                        {!screenshot && <Badge value="NO SCREENSHOT" tone="red" />}
-                        {mismatch && <Badge value="DATE CHECK" tone="red" />}
-                      </div>
-
-                      {generatedTrees.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {generatedTrees.map((tree) => (
-                            <span key={tree.id} className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-900">
-                              {tree.tree_code}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      <p className="mt-3 text-xs font-bold leading-5 text-slate-600">
+                        Caretaker: {row.caretaker_name || "Unassigned"}
+                      </p>
                     </button>
                   );
-                })
-              )}
-            </div>
+                })}
+              </div>
+            )}
           </Panel>
 
-          <Panel title="Approval Detail" subtitle="Payment screenshot, date reader, and approval actions.">
-            {!selectedPurchase ? (
-              <Empty text="Select a purchase request first." />
+          <Panel title="Seedling Detail" subtitle="Owner, purchase, caretaker, and next action.">
+            {!selectedRow ? (
+              <Empty text="Select an AG code first." />
             ) : (
-              <>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Info label="Co-Planter" value={selectedProfile?.full_name || "-"} />
-                  <Info label="Email" value={selectedProfile?.email || "-"} />
-                  <Info label="Quantity" value={String(selectedPurchase.quantity || 0)} />
-                  <Info label="Amount" value={peso(selectedPurchase.amount)} />
-                  <Info label="Payment Reference" value={selectedPurchase.payment_reference || "-"} />
-                  <Info label="Request Date" value={requestDate || formatDate(selectedPurchase.created_at)} />
-                  <Info label="Payment Screenshot Date" value={screenshotDate || "No payment date recorded"} />
-                  <Info label="Approved At" value={formatDate(selectedPurchase.approved_at)} />
-                </div>
-
-                <div className="mt-5 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+              <div className="space-y-5">
+                <div className="rounded-[1.5rem] border border-emerald-100 bg-emerald-50 p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-black text-slate-950">Payment Screenshot</p>
-                      <p className="mt-1 text-xs font-bold text-slate-500">Admin must compare the screenshot against request details before approval.</p>
+                      <p className="text-xs font-black uppercase tracking-wide text-emerald-700">AG Code</p>
+                      <h2 className="mt-2 text-3xl font-black text-slate-950">{selectedRow.tree_code}</h2>
+                      <p className="mt-2 text-sm font-bold text-slate-600">
+                        {selectedRow.owner_name} - {selectedRow.owner_email}
+                      </p>
                     </div>
-                    {!hasScreenshot && <Badge value="MISSING" tone="red" />}
-                    {hasDateMismatch && <Badge value="DATE MISMATCH" tone="red" />}
-                    {!hasDateMismatch && screenshotDate && <Badge value="DATE OK" />}
-                  </div>
-
-                  {hasDateMismatch && (
-                    <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-800">
-                      Double check needed: payment screenshot date is {screenshotDate}, but request date is {requestDate}.
-                    </div>
-                  )}
-
-                  {!screenshotDate && (
-                    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-black text-amber-900">
-                      Payment date reader needs a payment date field from the submitted proof. Add `payment_date` in the database to enable automatic date matching.
-                    </div>
-                  )}
-
-                  {hasScreenshot ? (
-                    <a href={paymentScreenshotUrl(selectedPurchase)} target="_blank" className="mt-4 block overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                      <img
-                        src={paymentScreenshotUrl(selectedPurchase)}
-                        alt="Payment proof screenshot"
-                        className="max-h-[420px] w-full object-contain"
-                      />
-                    </a>
-                  ) : (
-                    <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500">
-                      No payment screenshot attached to this request.
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-5 rounded-3xl border border-emerald-100 bg-emerald-50/70 p-4">
-                  <p className="text-sm font-black text-slate-950">Generated AG Trees</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {selectedTrees.length === 0 ? (
-                      <span className="text-sm font-bold text-slate-500">No AG codes yet. Approval will generate missing tree codes.</span>
-                    ) : (
-                      selectedTrees.map((tree) => (
-                        <span key={tree.id} className="rounded-full bg-amber-100 px-4 py-2 text-xs font-black text-amber-900">
-                          {tree.tree_code}
-                        </span>
-                      ))
-                    )}
+                    <Badge status={selectedRow.seedling_status} />
                   </div>
                 </div>
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  <button
-                    disabled={busyId === selectedPurchase.id || String(selectedPurchase.status || "").toUpperCase() === "APPROVED"}
-                    onClick={() => approvePurchase(selectedPurchase)}
-                    className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:bg-slate-400"
-                  >
-                    Approve + Generate AG Codes
-                  </button>
-                  <button
-                    disabled={busyId === selectedPurchase.id || String(selectedPurchase.status || "").toUpperCase() === "APPROVED"}
-                    onClick={() => rejectPurchase(selectedPurchase)}
-                    className="rounded-2xl bg-red-600 px-6 py-4 text-sm font-black text-white hover:bg-red-700 disabled:bg-slate-400"
-                  >
-                    Reject Purchase
-                  </button>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Info label="Owner" value={selectedRow.owner_name} />
+                  <Info label="Owner Email" value={selectedRow.owner_email} />
+                  <Info label="Purchase Status" value={selectedRow.purchase_status || "-"} />
+                  <Info label="Payment Reference" value={selectedRow.payment_reference || "-"} />
+                  <Info label="Tree Status" value={selectedRow.tree_status || "-"} />
+                  <Info label="DENR / Tag Number" value={selectedRow.denr_tag_number || "Pending"} />
+                  <Info label="Planted At" value={formatDate(selectedRow.planted_at)} />
+                  <Info label="Caretaker" value={`${selectedRow.caretaker_name || "Unassigned"} ${selectedRow.caretaker_email ? `(${selectedRow.caretaker_email})` : ""}`} />
+                  <Info label="Work Status" value={selectedRow.work_status || "-"} />
+                  <Info label="Assignment Status" value={selectedRow.assignment_status || "-"} />
                 </div>
-              </>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <button
+                    onClick={() => sendCaretakerAlert(selectedRow)}
+                    disabled={sending}
+                    className="rounded-2xl bg-amber-400 px-4 py-4 text-sm font-black text-amber-950 hover:bg-amber-300 disabled:opacity-60"
+                  >
+                    {sending ? "Sending..." : "Alert Caretaker"}
+                  </button>
+                  <Link href="/admin/tree-maintenance" className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-center text-sm font-black text-emerald-800">
+                    Open Tree Maintenance
+                  </Link>
+                  <Link href="/admin/tree-registry" className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-center text-sm font-black text-slate-800">
+                    Verify / Tag
+                  </Link>
+                </div>
+
+                <details className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
+                  <summary className="cursor-pointer text-sm font-black text-slate-950">Raw Row</summary>
+                  <pre className="mt-4 max-h-[360px] overflow-auto whitespace-pre-wrap text-xs leading-5 text-slate-600">
+                    {JSON.stringify(selectedRow, null, 2)}
+                  </pre>
+                </details>
+              </div>
             )}
           </Panel>
         </section>
@@ -467,21 +328,60 @@ export default function AdminPurchasesPage() {
   );
 }
 
-function Panel({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+const controlClass =
+  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400";
+
+function formatDate(value: any) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function statusLabel(status: string) {
+  if (status === "TAGGED") return "TAGGED";
+  if (status === "CARETAKER_DONE_NEEDS_ADMIN_VERIFY") return "NEEDS ADMIN VERIFY";
+  if (status === "CARETAKER_ASSIGNED") return "CARETAKER ASSIGNED";
+  if (status === "NEEDS_CARETAKER") return "NEEDS CARETAKER";
+  return status || "PENDING";
+}
+
+function statusClass(status: string) {
+  if (status === "TAGGED") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (status === "CARETAKER_DONE_NEEDS_ADMIN_VERIFY") return "border-blue-200 bg-blue-50 text-blue-800";
+  if (status === "CARETAKER_ASSIGNED") return "border-amber-200 bg-amber-50 text-amber-800";
+  if (status === "NEEDS_CARETAKER") return "border-red-200 bg-red-50 text-red-800";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function Panel({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
-    <section className="min-h-[680px] rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm">
+    <section className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
       <h2 className="text-2xl font-black text-slate-950">{title}</h2>
-      <p className="mt-1 text-sm font-medium text-slate-500">{subtitle}</p>
+      <p className="mt-1 text-sm leading-6 text-slate-600">{subtitle}</p>
       <div className="mt-5">{children}</div>
     </section>
   );
 }
 
-function Metric({ title, value }: { title: string; value: string }) {
+function HeroStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-white/20 bg-white/16 p-4 backdrop-blur">
-      <p className="text-xs font-black uppercase tracking-wide text-white/65">{title}</p>
+      <p className="text-xs font-black uppercase tracking-wide text-white/65">{label}</p>
       <p className="mt-2 truncate text-2xl font-black text-white">{value}</p>
+    </div>
+  );
+}
+
+function MiniMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-white bg-white px-3 py-2">
+      <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-1 text-sm font-black text-slate-950">{value}</p>
     </div>
   );
 }
@@ -495,14 +395,8 @@ function Info({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Badge({ value, tone = "green" }: { value: string; tone?: "green" | "red" | "amber" }) {
-  const style = tone === "red"
-    ? "border-red-200 bg-red-50 text-red-800"
-    : tone === "amber"
-      ? "border-amber-200 bg-amber-50 text-amber-800"
-      : "border-emerald-200 bg-emerald-50 text-emerald-800";
-
-  return <span className={`rounded-full border px-3 py-1 text-xs font-black ${style}`}>{value}</span>;
+function Badge({ status }: { status: string }) {
+  return <span className={`rounded-full border px-3 py-1 text-xs font-black ${statusClass(status)}`}>{statusLabel(status)}</span>;
 }
 
 function Empty({ text }: { text: string }) {
