@@ -70,7 +70,7 @@ export default function AdminTreeMaintenancePage() {
     setLoading(true);
     setMessage("");
 
-    const [orderResult, gardenerResult, assignmentResult, logResult] = await Promise.all([
+    const [orderResult, gardenerResult, farmerProfileResult, assignmentResult, logResult] = await Promise.all([
       supabase
         .from("maintenance_orders")
         .select("*")
@@ -78,6 +78,11 @@ export default function AdminTreeMaintenancePage() {
       supabase
         .from("gardeners")
         .select("id, full_name, email, mobile, status, resume_url, created_at")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("profiles")
+        .select("id, full_name, email, mobile, mobile_number, role, account_status, auth_user_id, created_at")
+        .in("role", ["FARMER", "GARDENER", "CARETAKER"])
         .order("created_at", { ascending: false }),
       supabase
         .from("gardener_assignments")
@@ -90,15 +95,15 @@ export default function AdminTreeMaintenancePage() {
         .limit(3000),
     ]);
 
-    if (orderResult.error || gardenerResult.error || assignmentResult.error || logResult.error) {
+    if (orderResult.error || gardenerResult.error || farmerProfileResult.error || assignmentResult.error || logResult.error) {
       setRecords([]);
-      setMessage(orderResult.error?.message || gardenerResult.error?.message || assignmentResult.error?.message || logResult.error?.message || "Unable to load maintenance data.");
+      setMessage(orderResult.error?.message || gardenerResult.error?.message || farmerProfileResult.error?.message || assignmentResult.error?.message || logResult.error?.message || "Unable to load maintenance data.");
       setLoading(false);
       return;
     }
 
     const orders = (orderResult.data || []) as AnyRow[];
-    const safeGardeners = ((gardenerResult.data || []) as AnyRow[]).filter((gardener) => normalize(gardener.status || "ACTIVE") === "ACTIVE");
+    const safeGardeners = mergeGardenersWithProfiles((gardenerResult.data || []) as AnyRow[], (farmerProfileResult.data || []) as AnyRow[]);
     const assignments = (assignmentResult.data || []) as AnyRow[];
     const logs = (logResult.data || []) as AnyRow[];
 
@@ -168,8 +173,16 @@ export default function AdminTreeMaintenancePage() {
     setMessage("");
 
     const now = new Date().toISOString();
+    const realGardener = await ensureGardenerRecord(selectedGardener);
+
+    if (!realGardener?.id) {
+      setMessage("Unable to prepare caretaker record. Check farmer/gardener database sync.");
+      setSaving(false);
+      return;
+    }
+
     const payload = {
-      gardener_id: selectedGardener.id,
+      gardener_id: realGardener.id,
       tree_id: selectedOrder.tree_id,
       maintenance_order_id: selectedOrder.order_id,
       profile_id: selectedOrder.owner_profile_id,
@@ -194,7 +207,7 @@ export default function AdminTreeMaintenancePage() {
     const { error: orderError } = await supabase
       .from("maintenance_orders")
       .update({
-        assigned_gardener_id: selectedGardener.id,
+        assigned_gardener_id: realGardener.id,
         work_status: "ASSIGNED",
         admin_note: adminNote.trim() || null,
         assigned_at: now,
@@ -211,14 +224,55 @@ export default function AdminTreeMaintenancePage() {
     await supabase.from("notifications").insert({
       profile_id: selectedOrder.owner_profile_id,
       title: "Tree maintenance assigned",
-      message: `${selectedOrder.tree_code} ${serviceLabel(selectedOrder.service_type)} has been assigned to ${selectedGardener.full_name || selectedGardener.email}.`,
+      message: `${selectedOrder.tree_code} ${serviceLabel(selectedOrder.service_type)} has been assigned to ${realGardener.full_name || realGardener.email}.`,
       is_read: false,
     });
 
-    setMessage(`${selectedOrder.tree_code} assigned to ${selectedGardener.full_name || selectedGardener.email}.`);
+    setMessage(`${selectedOrder.tree_code} assigned to ${realGardener.full_name || realGardener.email}.`);
+    setSelectedGardenerId(realGardener.id);
     setAdminNote("");
     await loadRecords();
     setSaving(false);
+  }
+
+  async function ensureGardenerRecord(row: AnyRow) {
+    if (!String(row.id || "").startsWith("profile:")) return row;
+
+    const email = String(row.email || "").toLowerCase().trim();
+    if (!email) return null;
+
+    const { data: existing, error: existingError } = await supabase
+      .from("gardeners")
+      .select("id, full_name, email, mobile, status, resume_url, created_at")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (existingError) {
+      setMessage(existingError.message);
+      return null;
+    }
+
+    if (existing?.id) return existing;
+
+    const payload = {
+      full_name: row.full_name || row.profile_name || email,
+      email,
+      mobile: row.mobile || row.mobile_number || null,
+      status: "ACTIVE",
+    };
+
+    const { data: created, error: createError } = await supabase
+      .from("gardeners")
+      .insert(payload)
+      .select("id, full_name, email, mobile, status, resume_url, created_at")
+      .single();
+
+    if (createError) {
+      setMessage(createError.message);
+      return null;
+    }
+
+    return created;
   }
 
   async function verifyProofAndComplete() {
@@ -657,6 +711,64 @@ function uniqueBy<T extends Record<string, any>>(rows: T[], key: string) {
     if (id && !map.has(id)) map.set(id, row);
   }
   return Array.from(map.values());
+}
+
+function mergeGardenersWithProfiles(gardenerRows: AnyRow[], profileRows: AnyRow[]) {
+  const byEmail = new Map<string, AnyRow>();
+
+  for (const gardener of gardenerRows) {
+    const email = String(gardener.email || "").toLowerCase().trim();
+    if (!email) continue;
+    if (normalize(gardener.status || "ACTIVE") !== "ACTIVE") continue;
+    byEmail.set(email, {
+      ...gardener,
+      source: "gardeners",
+      sync_status: "READY",
+    });
+  }
+
+  for (const profile of profileRows) {
+    const email = String(profile.email || "").toLowerCase().trim();
+    if (!email) continue;
+    if (normalize(profile.account_status || "ACTIVE") !== "ACTIVE") continue;
+
+    const existing = byEmail.get(email);
+    if (existing) {
+      byEmail.set(email, {
+        ...existing,
+        profile_id: profile.id,
+        profile_role: profile.role,
+        profile_status: profile.account_status,
+        auth_user_id: profile.auth_user_id,
+        full_name: existing.full_name || profile.full_name,
+        mobile: existing.mobile || profile.mobile || profile.mobile_number || null,
+        sync_status: "READY",
+      });
+      continue;
+    }
+
+    byEmail.set(email, {
+      id: `profile:${profile.id}`,
+      profile_id: profile.id,
+      full_name: profile.full_name || email,
+      email,
+      mobile: profile.mobile || profile.mobile_number || null,
+      status: "ACTIVE",
+      created_at: profile.created_at || null,
+      source: "profiles",
+      profile_role: profile.role,
+      profile_status: profile.account_status,
+      auth_user_id: profile.auth_user_id,
+      sync_status: "PROFILE_ONLY_AUTO_SYNC_ON_ASSIGN",
+    });
+  }
+
+  return Array.from(byEmail.values()).sort((a, b) => {
+    const aReady = a.source === "gardeners" ? 0 : 1;
+    const bReady = b.source === "gardeners" ? 0 : 1;
+    if (aReady !== bReady) return aReady - bReady;
+    return String(a.full_name || a.email || "").localeCompare(String(b.full_name || b.email || ""));
+  });
 }
 
 function serviceLabel(value?: string | null) {
