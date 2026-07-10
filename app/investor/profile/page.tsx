@@ -11,7 +11,7 @@ const requiredProfileFields = [
   { key: "address", label: "Current address" },
 ];
 
-const KYC_BUCKET = "kyc-documents";
+const KYC_BUCKET = "kyc-docs";
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
@@ -500,3 +500,4 @@ function isImageUrl(url: string) {
 function isPdfUrl(url: string) {
   return /\.pdf(\?|#|$)/i.test(url);
 }
+
