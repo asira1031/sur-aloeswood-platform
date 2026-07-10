@@ -55,10 +55,12 @@ export default function AdminTreeMaintenancePage() {
   const [selectedOrderId, setSelectedOrderId] = useState("");
   const [selectedGardenerId, setSelectedGardenerId] = useState("");
   const [adminNote, setAdminNote] = useState("");
+  const [verificationNote, setVerificationNote] = useState("");
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
   useEffect(() => {
     void loadRecords();
@@ -68,27 +70,86 @@ export default function AdminTreeMaintenancePage() {
     setLoading(true);
     setMessage("");
 
-    const [recordResult, gardenerResult] = await Promise.all([
-      supabase.rpc("admin_tree_maintenance_records"),
-      supabase.from("gardeners").select("id, full_name, email, mobile, status, created_at").order("created_at", { ascending: false }),
+    const [orderResult, gardenerResult, assignmentResult, logResult] = await Promise.all([
+      supabase
+        .from("maintenance_orders")
+        .select("*")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("gardeners")
+        .select("id, full_name, email, mobile, status, resume_url, created_at")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("gardener_assignments")
+        .select("*")
+        .order("assigned_at", { ascending: false, nullsFirst: false }),
+      supabase
+        .from("tree_growth_logs")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(3000),
     ]);
 
-    if (recordResult.error) {
+    if (orderResult.error || gardenerResult.error || assignmentResult.error || logResult.error) {
       setRecords([]);
-      setMessage(`${recordResult.error.message}. Run admin-tree-maintenance-rpc.sql in Supabase.`);
+      setMessage(orderResult.error?.message || gardenerResult.error?.message || assignmentResult.error?.message || logResult.error?.message || "Unable to load maintenance data.");
       setLoading(false);
       return;
     }
 
-    const safeRecords = ((recordResult.data || []) as AnyRow[]).map(mapRecord);
-    const safeGardeners = ((gardenerResult.data || []) as AnyRow[]);
+    const orders = (orderResult.data || []) as AnyRow[];
+    const safeGardeners = ((gardenerResult.data || []) as AnyRow[]).filter((gardener) => normalize(gardener.status || "ACTIVE") === "ACTIVE");
+    const assignments = (assignmentResult.data || []) as AnyRow[];
+    const logs = (logResult.data || []) as AnyRow[];
+
+    const treeIds = unique(orders.map((order) => order.tree_id).filter(Boolean));
+    const profileIds = unique(orders.map((order) => order.profile_id).filter(Boolean));
+
+    const [treeResult, profileResult] = await Promise.all([
+      treeIds.length
+        ? supabase
+            .from("tree_registry")
+            .select("id, profile_id, purchase_id, tree_code, denr_tag_number, species, status, gps_lat, gps_lng, planted_at, created_at")
+            .in("id", treeIds)
+        : Promise.resolve({ data: [], error: null }),
+      profileIds.length
+        ? supabase
+            .from("profiles")
+            .select("id, full_name, email")
+            .in("id", profileIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    if (treeResult.error || profileResult.error) {
+      setRecords([]);
+      setMessage(treeResult.error?.message || profileResult.error?.message || "Unable to load tree/profile data.");
+      setLoading(false);
+      return;
+    }
+
+    const trees = (treeResult.data || []) as AnyRow[];
+    const profiles = (profileResult.data || []) as AnyRow[];
+    const safeRecords = orders.map((order) => {
+      const tree = trees.find((row) => row.id === order.tree_id) || {};
+      const owner = profiles.find((row) => row.id === (order.profile_id || tree.profile_id)) || {};
+      const assignment =
+        assignments.find((row) => String(row.maintenance_order_id || "") === String(order.id || "")) ||
+        assignments.find((row) => String(row.tree_id || "") === String(order.tree_id || "") && String(row.task_type || row.service_type || "") === String(order.service_type || ""));
+      const gardener = safeGardeners.find((row) => row.id === (assignment?.gardener_id || order.assigned_gardener_id)) || {};
+      const latestLog =
+        logs.find((log) => String(log.maintenance_order_id || "") === String(order.id || "")) ||
+        logs.find((log) => String(log.tree_id || "") === String(order.tree_id || "")) ||
+        logs.find((log) => String(log.tree_code || "") === String(tree.tree_code || order.tree_code || ""));
+
+      return mapDirectRecord(order, tree, owner, assignment, gardener, latestLog);
+    });
 
     setRecords(safeRecords);
     setGardeners(safeGardeners);
     setSelectedOwnerId((current) => current || safeRecords[0]?.owner_profile_id || "");
     setSelectedTreeId((current) => current || safeRecords[0]?.tree_id || "");
     setSelectedOrderId((current) => current || safeRecords[0]?.order_id || "");
-    setSelectedGardenerId((current) => current || safeGardeners.find((g) => String(g.status || "").toUpperCase() === "ACTIVE")?.id || safeGardeners[0]?.id || "");
+    setSelectedGardenerId((current) => current || safeGardeners[0]?.id || "");
     setLoading(false);
   }
 
@@ -106,6 +167,7 @@ export default function AdminTreeMaintenancePage() {
     setSaving(true);
     setMessage("");
 
+    const now = new Date().toISOString();
     const payload = {
       gardener_id: selectedGardener.id,
       tree_id: selectedOrder.tree_id,
@@ -115,8 +177,8 @@ export default function AdminTreeMaintenancePage() {
       task_type: selectedOrder.service_type,
       notes: adminNote.trim() || selectedOrder.customer_note || null,
       status: "ASSIGNED",
-      assigned_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      assigned_at: now,
+      updated_at: now,
     };
 
     const assignmentResult = selectedOrder.assignment_id
@@ -135,8 +197,8 @@ export default function AdminTreeMaintenancePage() {
         assigned_gardener_id: selectedGardener.id,
         work_status: "ASSIGNED",
         admin_note: adminNote.trim() || null,
-        assigned_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        assigned_at: now,
+        updated_at: now,
       })
       .eq("id", selectedOrder.order_id);
 
@@ -157,6 +219,147 @@ export default function AdminTreeMaintenancePage() {
     setAdminNote("");
     await loadRecords();
     setSaving(false);
+  }
+
+  async function verifyProofAndComplete() {
+    if (!selectedOrder) {
+      setMessage("Select a maintenance order first.");
+      return;
+    }
+
+    if (!selectedOrder.latest_log_id) {
+      setMessage("No caretaker proof log found yet.");
+      return;
+    }
+
+    if (!hasCompleteProof(selectedOrder)) {
+      setMessage("Proof is incomplete. Tree photo, tag photo, and visible tag serial are required before completion.");
+      return;
+    }
+
+    setVerifying(true);
+    setMessage("");
+
+    const now = new Date().toISOString();
+    const cleanTag = String(selectedOrder.submitted_denr_tag_number || "").trim();
+
+    const { error: logError } = await supabase
+      .from("tree_growth_logs")
+      .update({ status: "APPROVED" })
+      .eq("id", selectedOrder.latest_log_id);
+
+    if (logError) {
+      setMessage(logError.message);
+      setVerifying(false);
+      return;
+    }
+
+    if (selectedOrder.assignment_id) {
+      const { error: assignmentError } = await supabase
+        .from("gardener_assignments")
+        .update({ status: "COMPLETED", updated_at: now })
+        .eq("id", selectedOrder.assignment_id);
+
+      if (assignmentError) {
+        setMessage(assignmentError.message);
+        setVerifying(false);
+        return;
+      }
+    }
+
+    const { error: orderError } = await supabase
+      .from("maintenance_orders")
+      .update({
+        work_status: "COMPLETED",
+        admin_note: verificationNote.trim() || selectedOrder.admin_note || null,
+        updated_at: now,
+      })
+      .eq("id", selectedOrder.order_id);
+
+    if (orderError) {
+      setMessage(orderError.message);
+      setVerifying(false);
+      return;
+    }
+
+    const treeUpdate: AnyRow = {
+      status: selectedOrder.tree_status === "PENDING_PLANTING" ? "REGISTERED" : selectedOrder.tree_status || "REGISTERED",
+      denr_tag_number: selectedOrder.denr_tag_number || cleanTag,
+    };
+
+    if (!selectedOrder.denr_tag_number && cleanTag) treeUpdate.denr_tag_number = cleanTag;
+    if (!selectedOrder.tree_status || selectedOrder.tree_status === "PENDING_PLANTING") treeUpdate.planted_at = new Date().toISOString().slice(0, 10);
+
+    await supabase.from("tree_registry").update(treeUpdate).eq("id", selectedOrder.tree_id);
+
+    await supabase.from("notifications").insert({
+      profile_id: selectedOrder.owner_profile_id,
+      title: "Caretaker proof verified",
+      message: `${selectedOrder.tree_code} ${serviceLabel(selectedOrder.service_type)} was verified by admin. Submitted tag: ${cleanTag}.`,
+      is_read: false,
+    });
+
+    setMessage(`${selectedOrder.tree_code} proof verified and marked completed.`);
+    setVerificationNote("");
+    await loadRecords();
+    setVerifying(false);
+  }
+
+  async function returnForResubmission() {
+    if (!selectedOrder) {
+      setMessage("Select a maintenance order first.");
+      return;
+    }
+
+    if (!selectedOrder.assignment_id) {
+      setMessage("No caretaker assignment found for this order.");
+      return;
+    }
+
+    setVerifying(true);
+    setMessage("");
+
+    const now = new Date().toISOString();
+
+    await supabase.from("tree_growth_logs").update({ status: "NEEDS_RESUBMISSION" }).eq("id", selectedOrder.latest_log_id || "");
+
+    const { error: assignmentError } = await supabase
+      .from("gardener_assignments")
+      .update({ status: "ASSIGNED", updated_at: now })
+      .eq("id", selectedOrder.assignment_id);
+
+    if (assignmentError) {
+      setMessage(assignmentError.message);
+      setVerifying(false);
+      return;
+    }
+
+    const { error: orderError } = await supabase
+      .from("maintenance_orders")
+      .update({
+        work_status: "ASSIGNED",
+        admin_note: verificationNote.trim() || "Returned for proof resubmission.",
+        updated_at: now,
+      })
+      .eq("id", selectedOrder.order_id);
+
+    if (orderError) {
+      setMessage(orderError.message);
+      setVerifying(false);
+      return;
+    }
+
+    await supabase.from("notifications").insert({
+      profile_id: selectedOrder.owner_profile_id,
+      title: "Caretaker proof needs resubmission",
+      message: `${selectedOrder.tree_code} proof was returned for resubmission. Admin note: ${verificationNote.trim() || "Please submit complete tree photo, tag photo, and visible tag serial."}`,
+      is_read: false,
+    });
+
+    setMessage(`${selectedOrder.tree_code} returned for caretaker resubmission.`);
+    setVerificationNote("");
+    await loadRecords();
+    setVerifying(false);
   }
 
   const filteredOwners = useMemo(() => {
@@ -181,8 +384,8 @@ export default function AdminTreeMaintenancePage() {
   const selectedOrder = records.find((record) => record.order_id === selectedOrderId) || selectedTreeRecords[0] || records[0] || null;
   const selectedGardener = gardeners.find((gardener) => gardener.id === selectedGardenerId) || null;
   const paidCount = records.filter((record) => normalize(record.payment_status) === "PAID").length;
-  const readyCount = records.filter((record) => ["PAID", "READY_FOR_ASSIGNMENT"].includes(normalize(record.payment_status)) || normalize(record.work_status) === "READY_FOR_ASSIGNMENT").length;
-  const assignedCount = records.filter((record) => record.assignment_id).length;
+  const readyCount = records.filter((record) => normalize(record.work_status) === "READY_FOR_ASSIGNMENT").length;
+  const assignedCount = records.filter((record) => record.assignment_id || normalize(record.work_status) === "ASSIGNED").length;
   const proofReviewCount = records.filter((record) => normalize(record.assignment_status) === "PENDING_ADMIN_REVIEW" || normalize(record.latest_log_status) === "PENDING_ADMIN_REVIEW").length;
 
   return (
@@ -197,7 +400,7 @@ export default function AdminTreeMaintenancePage() {
               <p className="text-xs font-black uppercase tracking-[0.32em] text-emerald-100">SUR Aloeswood Admin</p>
               <h1 className="mt-4 text-4xl font-black text-white lg:text-6xl">Tree Maintenance</h1>
               <p className="mt-4 max-w-3xl text-sm leading-7 text-white/78">
-                Paid customer care requests become caretaker assignments. This page reads maintenance orders and assignment records directly.
+                Paid customer care requests become caretaker assignments. This page reads orders, trees, assignments, and active gardeners directly.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -211,8 +414,8 @@ export default function AdminTreeMaintenancePage() {
 
           <div className="relative z-10 mt-8 grid gap-3 md:grid-cols-4">
             <HeroStat label="Maintenance Orders" value={String(records.length)} />
-            <HeroStat label="Paid / Ready" value={String(Math.max(paidCount, readyCount))} />
-            <HeroStat label="Assigned Tasks" value={String(assignedCount)} />
+            <HeroStat label="Paid / Ready" value={String(paidCount + readyCount)} />
+            <HeroStat label="Active Gardeners" value={String(gardeners.length)} />
             <HeroStat label="Proof Review" value={String(proofReviewCount)} />
           </div>
 
@@ -224,7 +427,7 @@ export default function AdminTreeMaintenancePage() {
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search owner, email, AG code, reference" className={controlClass} />
             <div className="mt-4 max-h-[650px] space-y-3 overflow-auto pr-1">
               {filteredOwners.length === 0 ? (
-                <Empty text="No maintenance records found. Run the RPC SQL if database has rows." />
+                <Empty text="No maintenance records found." />
               ) : filteredOwners.map((owner) => {
                 const orderCount = records.filter((record) => record.owner_profile_id === owner.owner_profile_id).length;
                 const isSelected = selectedOwnerId === owner.owner_profile_id;
@@ -266,6 +469,7 @@ export default function AdminTreeMaintenancePage() {
                           <button key={order.order_id} onClick={() => {
                             setSelectedTreeId(order.tree_id);
                             setSelectedOrderId(order.order_id);
+                            setSelectedGardenerId(order.gardener_id || gardeners[0]?.id || "");
                           }} className={`w-full rounded-xl border px-3 py-2 text-left text-xs font-black ${selectedOrderId === order.order_id ? "border-emerald-300 bg-white text-emerald-800" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
                             <div className="flex justify-between gap-2">
                               <span>{serviceLabel(order.service_type)}</span>
@@ -311,6 +515,71 @@ export default function AdminTreeMaintenancePage() {
                   </div>
                 )}
 
+                {(selectedOrder.latest_log_id || selectedOrder.photo_url || selectedOrder.serial_photo_url || selectedOrder.submitted_denr_tag_number) && (
+                  <section className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-black text-slate-950">Caretaker Proof Review</h3>
+                        <p className="mt-1 text-xs font-bold text-slate-500">
+                          Admin verifies the submitted tree photo, tag close-up, and visible serial before completion.
+                        </p>
+                      </div>
+                      <Badge value={proofLabel(selectedOrder)} />
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-3">
+                      <Info label="Tree Photo" value={selectedOrder.photo_url ? "Submitted" : "Missing"} />
+                      <Info label="Tag Photo" value={selectedOrder.serial_photo_url ? "Submitted" : "Missing"} />
+                      <Info label="Visible Tag" value={selectedOrder.submitted_denr_tag_number || "Missing"} />
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      {selectedOrder.photo_url ? (
+                        <a href={selectedOrder.photo_url} target="_blank" className="overflow-hidden rounded-2xl border border-emerald-100 bg-white" rel="noreferrer">
+                          <img src={selectedOrder.photo_url} alt="Submitted tree proof" className="h-56 w-full object-cover" />
+                          <p className="px-4 py-3 text-xs font-black text-emerald-800">Open tree photo</p>
+                        </a>
+                      ) : (
+                        <Empty text="Tree photo missing." />
+                      )}
+
+                      {selectedOrder.serial_photo_url ? (
+                        <a href={selectedOrder.serial_photo_url} target="_blank" className="overflow-hidden rounded-2xl border border-emerald-100 bg-white" rel="noreferrer">
+                          <img src={selectedOrder.serial_photo_url} alt="Submitted tag proof" className="h-56 w-full object-cover" />
+                          <p className="px-4 py-3 text-xs font-black text-emerald-800">Open tag photo</p>
+                        </a>
+                      ) : (
+                        <Empty text="Tag close-up photo missing." />
+                      )}
+                    </div>
+
+                    <textarea
+                      value={verificationNote}
+                      onChange={(event) => setVerificationNote(event.target.value)}
+                      rows={3}
+                      placeholder="Admin verification note or resubmission reason"
+                      className="mt-4 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
+                    />
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <button
+                        onClick={verifyProofAndComplete}
+                        disabled={verifying || !hasCompleteProof(selectedOrder)}
+                        className="rounded-2xl bg-emerald-600 px-5 py-4 text-sm font-black text-white shadow-sm hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500"
+                      >
+                        {verifying ? "Verifying..." : "Verify Proof + Mark Completed"}
+                      </button>
+                      <button
+                        onClick={returnForResubmission}
+                        disabled={verifying || !selectedOrder.assignment_id}
+                        className="rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4 text-sm font-black text-amber-900 hover:bg-amber-100 disabled:opacity-60"
+                      >
+                        Return for Resubmission
+                      </button>
+                    </div>
+                  </section>
+                )}
+
                 <div>
                   <label className="text-xs font-black uppercase tracking-wide text-slate-500">Farmer / Caretaker</label>
                   <select value={selectedGardenerId} onChange={(event) => setSelectedGardenerId(event.target.value)} className={`mt-2 w-full ${controlClass}`}>
@@ -339,42 +608,46 @@ export default function AdminTreeMaintenancePage() {
 
 const controlClass = "rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400";
 
-function mapRecord(row: AnyRow): MaintenanceRecord {
+function mapDirectRecord(order: AnyRow, tree: AnyRow, owner: AnyRow, assignment: AnyRow = {}, gardener: AnyRow = {}, latestLog: AnyRow = {}): MaintenanceRecord {
   return {
-    order_id: row.order_id,
-    order_created_at: row.order_created_at || null,
-    payment_reference: row.payment_reference || "",
-    service_type: row.service_type || "MAINTENANCE",
-    payment_status: row.payment_status || "PENDING",
-    work_status: row.work_status || "PENDING",
-    amount: row.amount ?? prices[row.service_type] ?? null,
-    customer_note: row.customer_note || null,
-    admin_note: row.admin_note || null,
-    paid_at: row.paid_at || null,
-    assigned_at: row.assigned_at || null,
-    tree_id: row.tree_id || "",
-    tree_code: row.tree_code || "AG tree",
-    tree_status: row.tree_status || "PENDING",
-    denr_tag_number: row.denr_tag_number || null,
-    owner_profile_id: row.owner_profile_id || "",
-    owner_name: row.owner_name || "Unknown owner",
-    owner_email: row.owner_email || "",
-    assignment_id: row.assignment_id || null,
-    assignment_status: row.assignment_status || null,
-    gardener_id: row.gardener_id || null,
-    caretaker_name: row.caretaker_name || null,
-    caretaker_email: row.caretaker_email || null,
-    latest_log_id: row.latest_log_id || null,
-    latest_log_status: row.latest_log_status || null,
-    photo_url: row.photo_url || null,
-    serial_photo_url: row.serial_photo_url || null,
-    submitted_denr_tag_number: row.submitted_denr_tag_number || null,
-    latest_log_created_at: row.latest_log_created_at || null,
+    order_id: order.id,
+    order_created_at: order.created_at || null,
+    payment_reference: order.payment_reference || order.reference_no || "",
+    service_type: order.service_type || "MAINTENANCE",
+    payment_status: order.payment_status || "PENDING",
+    work_status: order.work_status || "PENDING",
+    amount: order.amount ?? prices[order.service_type] ?? null,
+    customer_note: order.customer_note || order.notes || null,
+    admin_note: order.admin_note || null,
+    paid_at: order.paid_at || null,
+    assigned_at: order.assigned_at || assignment.assigned_at || null,
+    tree_id: order.tree_id || tree.id || "",
+    tree_code: tree.tree_code || order.tree_code || "AG tree",
+    tree_status: tree.status || "PENDING",
+    denr_tag_number: tree.denr_tag_number || null,
+    owner_profile_id: order.profile_id || tree.profile_id || "",
+    owner_name: owner.full_name || "Unknown owner",
+    owner_email: owner.email || "",
+    assignment_id: assignment.id || null,
+    assignment_status: assignment.status || null,
+    gardener_id: assignment.gardener_id || order.assigned_gardener_id || null,
+    caretaker_name: gardener.full_name || null,
+    caretaker_email: gardener.email || null,
+    latest_log_id: latestLog.id || null,
+    latest_log_status: latestLog.status || null,
+    photo_url: latestLog.photo_url || null,
+    serial_photo_url: latestLog.serial_photo_url || null,
+    submitted_denr_tag_number: latestLog.submitted_denr_tag_number || null,
+    latest_log_created_at: latestLog.created_at || null,
   };
 }
 
 function normalize(value?: string | null) {
   return String(value || "").toUpperCase();
+}
+
+function unique(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean)));
 }
 
 function uniqueBy<T extends Record<string, any>>(rows: T[], key: string) {
@@ -407,13 +680,6 @@ function proofLabel(record: MaintenanceRecord) {
   if (hasCompleteProof(record)) return record.latest_log_status || "PENDING_ADMIN_REVIEW";
   if (needsProofReview(record)) return "MISSING PROOF";
   return "AWAITING PROOF";
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" });
 }
 
 function HeroStat({ label, value }: { label: string; value: string }) {
