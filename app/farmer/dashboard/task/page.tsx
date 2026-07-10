@@ -8,6 +8,8 @@ const CARETAKER_UPLOAD_BUCKET = "caretaker-updates";
 
 type AnyRow = Record<string, any>;
 
+type QueueKey = "active" | "submitted" | "completed" | "issues";
+
 type CaretakerTask = {
   task_key: string;
   assignment_id: string;
@@ -40,6 +42,7 @@ export default function FarmerTaskPage() {
   const [caretaker, setCaretaker] = useState<AnyRow | null>(null);
   const [tasks, setTasks] = useState<CaretakerTask[]>([]);
   const [selectedKey, setSelectedKey] = useState("");
+  const [queue, setQueue] = useState<QueueKey>("active");
   const [typedAgCode, setTypedAgCode] = useState("");
   const [visibleTag, setVisibleTag] = useState("");
   const [notes, setNotes] = useState("");
@@ -100,10 +103,7 @@ export default function FarmerTaskPage() {
 
     if (!rpcError && rpcRows) {
       const mapped = ((rpcRows || []) as AnyRow[]).map(mapRpcTask);
-      setCaretaker(gardenerRow);
-      setTasks(mapped);
-      setSelectedKey((current) => current || mapped[0]?.task_key || "");
-      localStorage.setItem("sur_login_email", cleanEmail);
+      applyLoadedTasks(gardenerRow, mapped, cleanEmail);
       setLoading(false);
       return;
     }
@@ -121,11 +121,19 @@ export default function FarmerTaskPage() {
     }
 
     const enriched = await enrichAssignments(gardenerRow, (assignmentRows || []) as AnyRow[]);
-    setCaretaker(gardenerRow);
-    setTasks(enriched);
-    setSelectedKey((current) => current || enriched[0]?.task_key || "");
-    localStorage.setItem("sur_login_email", cleanEmail);
+    applyLoadedTasks(gardenerRow, enriched, cleanEmail);
     setLoading(false);
+  }
+
+  function applyLoadedTasks(gardenerRow: AnyRow, loadedTasks: CaretakerTask[], cleanEmail: string) {
+    setCaretaker(gardenerRow);
+    setTasks(loadedTasks);
+    localStorage.setItem("sur_login_email", cleanEmail);
+
+    setSelectedKey((current) => {
+      if (loadedTasks.some((task) => task.task_key === current)) return current;
+      return loadedTasks.find((task) => taskBucket(task) === queue)?.task_key || loadedTasks[0]?.task_key || "";
+    });
   }
 
   async function enrichAssignments(gardenerRow: AnyRow, assignments: AnyRow[]): Promise<CaretakerTask[]> {
@@ -149,8 +157,8 @@ export default function FarmerTaskPage() {
         : Promise.resolve({ data: [], error: null }),
     ]);
 
-    const trees = ((treeResult.data || []) as AnyRow[]);
-    const orders = ((orderResult.data || []) as AnyRow[]);
+    const trees = (treeResult.data || []) as AnyRow[];
+    const orders = (orderResult.data || []) as AnyRow[];
     const ownerIds = unique(trees.map((tree) => tree.profile_id).filter(Boolean));
 
     const [ownerResult, logResult] = await Promise.all([
@@ -164,20 +172,18 @@ export default function FarmerTaskPage() {
         .limit(3000),
     ]);
 
-    const owners = ((ownerResult.data || []) as AnyRow[]);
-    const logs = ((logResult.data || []) as AnyRow[]);
+    const owners = (ownerResult.data || []) as AnyRow[];
+    const logs = (logResult.data || []) as AnyRow[];
 
     return assignments.map((assignment) => {
       const tree = trees.find((row) => row.id === assignment.tree_id) || {};
       const owner = owners.find((row) => row.id === tree.profile_id) || {};
       const order = orders.find((row) => row.id === assignment.maintenance_order_id) || {};
-      const latestLog = logs.find((log) => {
-        return (
-          String(log.tree_id || "") === String(tree.id || assignment.tree_id || "") ||
-          String(log.tree_code || "") === String(tree.tree_code || assignment.tree_code || "") ||
-          String(log.maintenance_order_id || "") === String(assignment.maintenance_order_id || "")
-        );
-      }) || {};
+      const latestLog =
+        logs.find((log) => String(log.maintenance_order_id || "") === String(assignment.maintenance_order_id || "")) ||
+        logs.find((log) => String(log.tree_id || "") === String(tree.id || assignment.tree_id || "")) ||
+        logs.find((log) => String(log.tree_code || "") === String(tree.tree_code || assignment.tree_code || "")) ||
+        {};
 
       return {
         task_key: `${assignment.id}-${assignment.maintenance_order_id || "no-order"}`,
@@ -200,9 +206,9 @@ export default function FarmerTaskPage() {
         amount: order.amount ?? assignment.amount ?? null,
         latest_log_id: latestLog.id || null,
         latest_log_status: latestLog.status || null,
-        photo_url: latestLog.photo_url || null,
-        serial_photo_url: latestLog.serial_photo_url || null,
-        submitted_denr_tag_number: latestLog.submitted_denr_tag_number || null,
+        photo_url: latestLog.photo_url || assignment.proof_photo_url || null,
+        serial_photo_url: latestLog.serial_photo_url || assignment.serial_photo_url || null,
+        submitted_denr_tag_number: latestLog.submitted_denr_tag_number || assignment.submitted_denr_tag_number || null,
         latest_log_created_at: latestLog.created_at || null,
       };
     });
@@ -240,6 +246,16 @@ export default function FarmerTaskPage() {
     const task = selected;
     if (!task) {
       setMessage("Select a task first.");
+      return;
+    }
+
+    if (isSubmitted(task) && !needsProofReview(task)) {
+      setMessage("This task is already submitted for admin review.");
+      return;
+    }
+
+    if (isApproved(task)) {
+      setMessage("This task is already completed and approved.");
       return;
     }
 
@@ -347,7 +363,8 @@ export default function FarmerTaskPage() {
       setHealth("HEALTHY");
       setTreePhoto(null);
       setSerialPhoto(null);
-      setMessage(`${task.tree_code} proof submitted for admin review.`);
+      setQueue("submitted");
+      setMessage(`${task.tree_code} proof submitted. It moved to Submitted for Admin Review.`);
       await loadTasks(email);
     } catch (error: any) {
       setMessage(error?.message || "Unable to submit proof.");
@@ -379,16 +396,17 @@ export default function FarmerTaskPage() {
     return data.signedUrl;
   }
 
-  const selected = tasks.find((task) => task.task_key === selectedKey) || tasks[0] || null;
-
   const grouped = useMemo(() => {
     return {
-      assigned: tasks.filter((task) => normalizeStatus(task.assignment_status) === "ASSIGNED"),
-      progress: tasks.filter((task) => normalizeStatus(task.assignment_status) === "IN_PROGRESS"),
-      review: tasks.filter((task) => normalizeStatus(task.assignment_status) === "PENDING_ADMIN_REVIEW" || needsProofReview(task)),
-      validProof: tasks.filter((task) => hasCompleteProof(task)),
+      active: tasks.filter((task) => taskBucket(task) === "active"),
+      submitted: tasks.filter((task) => taskBucket(task) === "submitted"),
+      completed: tasks.filter((task) => taskBucket(task) === "completed"),
+      issues: tasks.filter((task) => taskBucket(task) === "issues"),
     };
   }, [tasks]);
+
+  const visibleTasks = grouped[queue];
+  const selected = tasks.find((task) => task.task_key === selectedKey) || visibleTasks[0] || tasks[0] || null;
 
   return (
     <main className="min-h-screen bg-[#eef6ef] text-slate-950">
@@ -399,7 +417,7 @@ export default function FarmerTaskPage() {
               <p className="text-xs font-black uppercase tracking-[0.35em] text-emerald-700">SUR ALOESWOOD FARMER</p>
               <h1 className="mt-4 text-4xl font-black md:text-6xl">Task Center</h1>
               <p className="mt-3 max-w-3xl text-sm font-semibold text-slate-600">
-                Each task is an assigned AG tree from gardener assignments. Proof is required before admin can verify completion.
+                Active work, submitted proof, and completed records are separated so the caretaker queue stays clean.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -416,27 +434,27 @@ export default function FarmerTaskPage() {
       </section>
 
       <section className="mx-auto grid max-w-7xl gap-5 px-6 py-8 md:grid-cols-4 md:px-10">
-        <Metric title="Assigned" value={String(grouped.assigned.length)} />
-        <Metric title="In Progress" value={String(grouped.progress.length)} />
-        <Metric title="Needs Review" value={String(grouped.review.length)} />
-        <Metric title="With Complete Proof" value={String(grouped.validProof.length)} />
+        <QueueButton title="Active Tasks" value={String(grouped.active.length)} active={queue === "active"} onClick={() => setQueue("active")} />
+        <QueueButton title="Submitted Review" value={String(grouped.submitted.length)} active={queue === "submitted"} onClick={() => setQueue("submitted")} />
+        <QueueButton title="Completed" value={String(grouped.completed.length)} active={queue === "completed"} onClick={() => setQueue("completed")} />
+        <QueueButton title="Needs Resubmission" value={String(grouped.issues.length)} active={queue === "issues"} onClick={() => setQueue("issues")} />
       </section>
 
       <section className="mx-auto grid max-w-7xl gap-6 px-6 pb-16 md:px-10 lg:grid-cols-[0.85fr_1.15fr]">
-        <Panel title="Assigned AG Tree Tasks" subtitle="Select one AG tree assignment to start work or submit proof.">
+        <Panel title={queueTitle(queue)} subtitle="Select one AG tree task to view its current state.">
           <div className="space-y-3">
-            {tasks.length === 0 ? (
-              <Empty text="No tasks found from gardener assignments." />
+            {visibleTasks.length === 0 ? (
+              <Empty text={emptyText(queue)} />
             ) : (
-              tasks.map((task) => (
+              visibleTasks.map((task) => (
                 <button key={task.task_key} onClick={() => setSelectedKey(task.task_key)} className={`w-full rounded-2xl border p-5 text-left transition ${selected?.task_key === task.task_key ? "border-emerald-400 bg-emerald-50 ring-2 ring-emerald-100" : "border-slate-200 bg-slate-50 hover:border-emerald-200"}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-xl font-black text-slate-950">{task.tree_code}</p>
                       <p className="mt-1 text-sm font-bold text-slate-600">{task.owner_name}</p>
-                      <p className="text-xs font-bold text-slate-400">{task.service_type}</p>
+                      <p className="text-xs font-bold text-slate-400">{serviceLabel(task.service_type)}</p>
                     </div>
-                    <Badge value={task.assignment_status} tone={statusTone(task)} />
+                    <Badge value={displayStatus(task)} tone={statusTone(task)} />
                   </div>
                   <div className="mt-4 grid gap-2 sm:grid-cols-2">
                     <SmallInfo label="Payment" value={task.payment_status} />
@@ -444,7 +462,7 @@ export default function FarmerTaskPage() {
                   </div>
                   {needsProofReview(task) && (
                     <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-black text-amber-900">
-                      Completed but missing required proof. Re-submit tree photo, tag photo, and visible tag serial.
+                      Missing required proof. Re-submit tree photo, tag photo, and visible tag serial.
                     </div>
                   )}
                 </button>
@@ -454,14 +472,14 @@ export default function FarmerTaskPage() {
         </Panel>
 
         <div className="space-y-6">
-          <Panel title="Selected Task" subtitle="Task state and owner details.">
+          <Panel title="Selected Task" subtitle="Task state, owner, and proof status.">
             {!selected ? (
               <Empty text="Select a task." />
             ) : (
               <div className="space-y-5">
                 <div className="grid gap-3 md:grid-cols-2">
                   <Info label="AG Code" value={selected.tree_code} />
-                  <Info label="Service" value={selected.service_type} />
+                  <Info label="Service" value={serviceLabel(selected.service_type)} />
                   <Info label="Owner" value={selected.owner_name} />
                   <Info label="Owner Email" value={selected.owner_email} />
                   <Info label="Assignment Status" value={selected.assignment_status} />
@@ -471,20 +489,22 @@ export default function FarmerTaskPage() {
                 </div>
 
                 <div className="flex flex-wrap gap-3">
-                  {normalizeStatus(selected.assignment_status) === "ASSIGNED" && (
+                  {taskBucket(selected) === "active" && normalizeStatus(selected.assignment_status) === "ASSIGNED" && (
                     <button disabled={busy} onClick={() => startWork(selected)} className="rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-black text-white hover:bg-emerald-700 disabled:bg-slate-300">
                       Start Work
                     </button>
                   )}
-                  <a href="#submit-proof" className="rounded-2xl border border-emerald-100 bg-white px-5 py-3 text-sm font-black text-emerald-900">
-                    Submit Proof
-                  </a>
+                  {(taskBucket(selected) === "active" || taskBucket(selected) === "issues") && (
+                    <a href="#submit-proof" className="rounded-2xl border border-emerald-100 bg-white px-5 py-3 text-sm font-black text-emerald-900">
+                      Submit Proof
+                    </a>
+                  )}
                 </div>
               </div>
             )}
           </Panel>
 
-          <Panel title="Latest Proof Status" subtitle="Admin needs both photos and the visible tag serial before true completion.">
+          <Panel title="Latest Proof" subtitle="Admin sees these files before approving the task.">
             {!selected ? (
               <Empty text="Select a task." />
             ) : (
@@ -494,30 +514,36 @@ export default function FarmerTaskPage() {
                   <SmallInfo label="Tag Photo" value={selected.serial_photo_url ? "Uploaded" : "Missing"} />
                   <SmallInfo label="Visible Tag" value={selected.submitted_denr_tag_number || "Missing"} />
                 </div>
-                {selected.photo_url && <a href={selected.photo_url} target="_blank" className="inline-block rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-black text-white">Open Tree Photo</a>}
-                {selected.serial_photo_url && <a href={selected.serial_photo_url} target="_blank" className="ml-3 inline-block rounded-2xl bg-slate-900 px-5 py-3 text-sm font-black text-white">Open Tag Photo</a>}
+                <div className="flex flex-wrap gap-3">
+                  {selected.photo_url && <a href={selected.photo_url} target="_blank" rel="noreferrer" className="inline-block rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-black text-white">Open Tree Photo</a>}
+                  {selected.serial_photo_url && <a href={selected.serial_photo_url} target="_blank" rel="noreferrer" className="inline-block rounded-2xl bg-slate-900 px-5 py-3 text-sm font-black text-white">Open Tag Photo</a>}
+                </div>
               </div>
             )}
           </Panel>
 
-          <Panel title="Submit Proof" subtitle="Strict proof submission for admin review." id="submit-proof">
+          <Panel title="Submit Proof" subtitle="Strict proof submission moves the task to Submitted Review." id="submit-proof">
             {!selected ? (
               <Empty text="Select a task." />
+            ) : isApproved(selected) ? (
+              <Empty text="This task is already completed and approved." />
+            ) : isSubmitted(selected) && !needsProofReview(selected) ? (
+              <Empty text="This task is already submitted for admin review. Wait for admin approval or return request." />
             ) : (
               <div className="grid gap-4">
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">
                   Type the exact AG code: <span className="font-black">{selected.tree_code}</span>
                 </div>
-                <input value={typedAgCode} onChange={(event) => setTypedAgCode(event.target.value)} placeholder="Type AG code exactly" className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
-                <input value={visibleTag} onChange={(event) => setVisibleTag(event.target.value)} placeholder="Visible tag / serial number on plant" className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
-                <select value={health} onChange={(event) => setHealth(event.target.value)} className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400">
+                <input value={typedAgCode} onChange={(event) => setTypedAgCode(event.target.value)} placeholder="Type AG code exactly" className={fieldClass} />
+                <input value={visibleTag} onChange={(event) => setVisibleTag(event.target.value)} placeholder="Visible tag / serial number on plant" className={fieldClass} />
+                <select value={health} onChange={(event) => setHealth(event.target.value)} className={fieldClass}>
                   <option>HEALTHY</option>
                   <option>GROWING</option>
                   <option>NEEDS_ATTENTION</option>
                   <option>DAMAGED</option>
                   <option>SICK</option>
                 </select>
-                <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Notes optional..." rows={4} className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
+                <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Notes optional..." rows={4} className={fieldClass} />
 
                 <FileInput label="Tree / seedling photo" file={treePhoto} onChange={setTreePhoto} />
                 <FileInput label="Tag / serial close-up photo" file={serialPhoto} onChange={setSerialPhoto} />
@@ -533,6 +559,8 @@ export default function FarmerTaskPage() {
     </main>
   );
 }
+
+const fieldClass = "rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400";
 
 function mapRpcTask(row: AnyRow): CaretakerTask {
   return {
@@ -556,7 +584,7 @@ function mapRpcTask(row: AnyRow): CaretakerTask {
     amount: row.amount ?? null,
     latest_log_id: row.latest_log_id || null,
     latest_log_status: row.latest_log_status || null,
-    photo_url: row.photo_url || null,
+    photo_url: row.photo_url || row.proof_photo_url || null,
     serial_photo_url: row.serial_photo_url || null,
     submitted_denr_tag_number: row.submitted_denr_tag_number || null,
     latest_log_created_at: row.latest_log_created_at || null,
@@ -571,13 +599,32 @@ function normalizeStatus(status?: string | null) {
   return String(status || "ASSIGNED").toUpperCase();
 }
 
+function serviceLabel(value?: string | null) {
+  return String(value || "Tree care").replaceAll("_", " ");
+}
+
 function hasCompleteProof(task: CaretakerTask) {
   return Boolean(task.photo_url && task.serial_photo_url && task.submitted_denr_tag_number);
+}
+
+function isSubmitted(task: CaretakerTask) {
+  return normalizeStatus(task.assignment_status) === "PENDING_ADMIN_REVIEW" || normalizeStatus(task.work_status) === "PENDING_ADMIN_REVIEW" || normalizeStatus(task.latest_log_status) === "PENDING_ADMIN_REVIEW";
+}
+
+function isApproved(task: CaretakerTask) {
+  return normalizeStatus(task.assignment_status) === "COMPLETED" || normalizeStatus(task.work_status) === "COMPLETED" || ["APPROVED", "VERIFIED"].includes(normalizeStatus(task.latest_log_status));
 }
 
 function needsProofReview(task: CaretakerTask) {
   const status = normalizeStatus(task.assignment_status);
   return ["COMPLETED", "DONE", "SUBMITTED", "PENDING_ADMIN_REVIEW"].includes(status) && !hasCompleteProof(task);
+}
+
+function taskBucket(task: CaretakerTask): QueueKey {
+  if (needsProofReview(task)) return "issues";
+  if (isApproved(task)) return "completed";
+  if (isSubmitted(task)) return "submitted";
+  return "active";
 }
 
 function proofLabel(task: CaretakerTask) {
@@ -586,17 +633,41 @@ function proofLabel(task: CaretakerTask) {
   return "AWAITING PROOF";
 }
 
+function displayStatus(task: CaretakerTask) {
+  if (needsProofReview(task)) return "NEEDS RESUBMISSION";
+  if (isApproved(task)) return "COMPLETED";
+  if (isSubmitted(task)) return "SUBMITTED";
+  return task.assignment_status || "ASSIGNED";
+}
+
 function statusTone(task: CaretakerTask) {
   if (needsProofReview(task)) return "amber";
-  if (hasCompleteProof(task)) return "green";
-  if (normalizeStatus(task.assignment_status) === "ASSIGNED") return "slate";
+  if (isApproved(task)) return "green";
+  if (isSubmitted(task)) return "blue";
   if (normalizeStatus(task.assignment_status) === "IN_PROGRESS") return "blue";
   return "slate";
 }
 
-function formatMoney(value?: number | null) {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
-  return `PHP ${Number(value).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function queueTitle(queue: QueueKey) {
+  const labels: Record<QueueKey, string> = {
+    active: "Active Tasks",
+    submitted: "Submitted for Admin Review",
+    completed: "Completed / Approved Tasks",
+    issues: "Needs Resubmission",
+  };
+
+  return labels[queue];
+}
+
+function emptyText(queue: QueueKey) {
+  const labels: Record<QueueKey, string> = {
+    active: "No active caretaker tasks.",
+    submitted: "No submitted tasks waiting for admin review.",
+    completed: "No completed tasks yet.",
+    issues: "No tasks need resubmission.",
+  };
+
+  return labels[queue];
 }
 
 function Panel({ title, subtitle, children, id }: { title: string; subtitle: string; children: ReactNode; id?: string }) {
@@ -609,12 +680,12 @@ function Panel({ title, subtitle, children, id }: { title: string; subtitle: str
   );
 }
 
-function Metric({ title, value }: { title: string; value: string }) {
+function QueueButton({ title, value, active, onClick }: { title: string; value: string; active: boolean; onClick: () => void }) {
   return (
-    <div className="rounded-[1.5rem] border border-emerald-100 bg-white p-5 shadow-sm">
-      <p className="text-xs font-black uppercase tracking-wide text-emerald-700">{title}</p>
-      <p className="mt-3 truncate text-xl font-black text-emerald-900">{value}</p>
-    </div>
+    <button onClick={onClick} className={`rounded-[1.5rem] border p-5 text-left shadow-sm transition ${active ? "border-emerald-400 bg-emerald-600 text-white ring-2 ring-emerald-100" : "border-emerald-100 bg-white text-slate-950 hover:border-emerald-300"}`}>
+      <p className={`text-xs font-black uppercase tracking-wide ${active ? "text-emerald-50" : "text-emerald-700"}`}>{title}</p>
+      <p className="mt-3 truncate text-xl font-black">{value}</p>
+    </button>
   );
 }
 
