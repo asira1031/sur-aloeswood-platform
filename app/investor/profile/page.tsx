@@ -127,8 +127,14 @@ export default function ProfilePage() {
     const selectedValidIdFile = validIdFile || validIdInputRef.current?.files?.[0] || null;
     const selectedSelfieFile = selfieFile || selfieInputRef.current?.files?.[0] || null;
 
+    const alreadyHasKycFiles = currentKycFiles.length > 0;
+
     if (!selectedValidIdFile && !selectedSelfieFile) {
-      setMessage("Choose at least one KYC file to upload.");
+      setMessage(
+        alreadyHasKycFiles
+          ? "KYC files are already submitted and awaiting admin review. Choose a new file only if you want to replace them."
+          : "Choose at least one KYC file to upload."
+      );
       return;
     }
 
@@ -263,6 +269,12 @@ export default function ProfilePage() {
               {message}
             </div>
           )}
+
+          {profile && currentKycFiles.length > 0 && (
+            <div className="relative z-10 mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-bold text-emerald-900">
+              KYC submitted successfully. Admin can now review your uploaded documents.
+            </div>
+          )}
         </section>
 
         <section className="grid gap-5 py-5 lg:grid-cols-[0.82fr_1.18fr]">
@@ -356,7 +368,11 @@ export default function ProfilePage() {
                   disabled={uploading || loading || !profile}
                   className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
-                  {uploading ? "Uploading KYC..." : "Upload KYC for Review"}
+                  {uploading
+                    ? "Uploading KYC..."
+                    : currentKycFiles.length > 0
+                      ? "Replace / Re-upload KYC"
+                      : "Upload KYC for Review"}
                 </button>
               </div>
 
