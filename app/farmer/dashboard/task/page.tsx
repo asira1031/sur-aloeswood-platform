@@ -406,7 +406,7 @@ export default function FarmerTaskPage() {
   }, [tasks]);
 
   const visibleTasks = grouped[queue];
-  const selected = tasks.find((task) => task.task_key === selectedKey) || visibleTasks[0] || tasks[0] || null;
+  const selected = visibleTasks.find((task) => task.task_key === selectedKey) || visibleTasks[0] || null;
 
   return (
     <main className="min-h-screen bg-[#eef6ef] text-slate-950">

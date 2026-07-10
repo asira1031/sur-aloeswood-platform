@@ -38,6 +38,8 @@ type MaintenanceRecord = {
   latest_log_created_at: string | null;
 };
 
+type QueueKey = "active" | "uploaded" | "completed";
+
 const prices: Record<string, number> = {
   ARTICLE_VI_MONTHLY: 200,
   ARTICLE_VI_ONE_TIME: 5000,
@@ -56,6 +58,7 @@ export default function AdminTreeMaintenancePage() {
   const [selectedGardenerId, setSelectedGardenerId] = useState("");
   const [adminNote, setAdminNote] = useState("");
   const [verificationNote, setVerificationNote] = useState("");
+  const [queue, setQueue] = useState<QueueKey>("active");
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -353,7 +356,8 @@ export default function AdminTreeMaintenancePage() {
       is_read: false,
     });
 
-    setMessage(`${selectedOrder.tree_code} proof verified and marked completed.`);
+    setMessage(`${selectedOrder.tree_code} proof verified and sent back to customer caretaker submissions.`);
+    setQueue("completed");
     setVerificationNote("");
     await loadRecords();
     setVerifying(false);
@@ -416,11 +420,13 @@ export default function AdminTreeMaintenancePage() {
     setVerifying(false);
   }
 
+  const queueRecords = useMemo(() => records.filter((record) => recordQueue(record) === queue), [records, queue]);
+
   const filteredOwners = useMemo(() => {
     const keyword = search.toLowerCase().trim();
     const owners = new Map<string, MaintenanceRecord>();
 
-    for (const record of records) {
+    for (const record of queueRecords) {
       if (!record.owner_profile_id) continue;
       if (!owners.has(record.owner_profile_id)) owners.set(record.owner_profile_id, record);
     }
@@ -429,18 +435,18 @@ export default function AdminTreeMaintenancePage() {
       const text = `${record.owner_name} ${record.owner_email} ${record.tree_code} ${record.payment_reference}`.toLowerCase();
       return !keyword || text.includes(keyword);
     });
-  }, [records, search]);
+  }, [queueRecords, search]);
 
-  const ownerRecords = records.filter((record) => record.owner_profile_id === selectedOwnerId);
+  const ownerRecords = queueRecords.filter((record) => record.owner_profile_id === selectedOwnerId);
   const treeRecords = ownerRecords.filter((record) => record.tree_id);
   const uniqueTrees = uniqueBy(treeRecords, "tree_id");
-  const selectedTreeRecords = records.filter((record) => record.tree_id === selectedTreeId);
-  const selectedOrder = records.find((record) => record.order_id === selectedOrderId) || selectedTreeRecords[0] || records[0] || null;
+  const selectedTreeRecords = queueRecords.filter((record) => record.tree_id === selectedTreeId);
+  const selectedOrder = queueRecords.find((record) => record.order_id === selectedOrderId) || selectedTreeRecords[0] || queueRecords[0] || null;
   const selectedGardener = gardeners.find((gardener) => gardener.id === selectedGardenerId) || null;
-  const paidCount = records.filter((record) => normalize(record.payment_status) === "PAID").length;
-  const readyCount = records.filter((record) => normalize(record.work_status) === "READY_FOR_ASSIGNMENT").length;
-  const assignedCount = records.filter((record) => record.assignment_id || normalize(record.work_status) === "ASSIGNED").length;
-  const proofReviewCount = records.filter((record) => normalize(record.assignment_status) === "PENDING_ADMIN_REVIEW" || normalize(record.latest_log_status) === "PENDING_ADMIN_REVIEW").length;
+  const activeCount = records.filter((record) => recordQueue(record) === "active").length;
+  const uploadedCount = records.filter((record) => recordQueue(record) === "uploaded").length;
+  const completedCount = records.filter((record) => recordQueue(record) === "completed").length;
+  const proofReviewCount = uploadedCount;
 
   return (
     <main className="min-h-screen bg-[#eef6ef] text-slate-950">
@@ -467,27 +473,33 @@ export default function AdminTreeMaintenancePage() {
           </div>
 
           <div className="relative z-10 mt-8 grid gap-3 md:grid-cols-4">
-            <HeroStat label="Maintenance Orders" value={String(records.length)} />
-            <HeroStat label="Paid / Ready" value={String(paidCount + readyCount)} />
+            <HeroStat label="Active Queue" value={String(activeCount)} />
+            <HeroStat label="Uploaded Tasks" value={String(uploadedCount)} />
             <HeroStat label="Active Gardeners" value={String(gardeners.length)} />
-            <HeroStat label="Proof Review" value={String(proofReviewCount)} />
+            <HeroStat label="Completed" value={String(completedCount)} />
           </div>
 
           {message && <div className="relative z-10 mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-900">{message}</div>}
         </section>
 
+        <section className="mt-5 grid gap-3 md:grid-cols-3">
+          <QueueButton title="For Assignment" detail="Paid care requests and active caretaker work." count={activeCount} active={queue === "active"} onClick={() => setQueue("active")} />
+          <QueueButton title="Uploaded Tasks" detail="Caretaker submissions waiting for admin verification." count={uploadedCount} active={queue === "uploaded"} onClick={() => setQueue("uploaded")} />
+          <QueueButton title="Completed" detail="Verified submissions already sent back to customer." count={completedCount} active={queue === "completed"} onClick={() => setQueue("completed")} />
+        </section>
+
         <section className="mt-5 grid gap-5 xl:grid-cols-[0.8fr_0.9fr_1.3fr]">
-          <Panel title="1. Customers" subtitle="Owners with maintenance orders.">
+          <Panel title="1. Customers" subtitle={queueSubtitle(queue)}>
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search owner, email, AG code, reference" className={controlClass} />
             <div className="mt-4 max-h-[650px] space-y-3 overflow-auto pr-1">
               {filteredOwners.length === 0 ? (
                 <Empty text="No maintenance records found." />
               ) : filteredOwners.map((owner) => {
-                const orderCount = records.filter((record) => record.owner_profile_id === owner.owner_profile_id).length;
+                const orderCount = queueRecords.filter((record) => record.owner_profile_id === owner.owner_profile_id).length;
                 const isSelected = selectedOwnerId === owner.owner_profile_id;
                 return (
                   <button key={owner.owner_profile_id} onClick={() => {
-                    const first = records.find((record) => record.owner_profile_id === owner.owner_profile_id);
+                    const first = queueRecords.find((record) => record.owner_profile_id === owner.owner_profile_id);
                     setSelectedOwnerId(owner.owner_profile_id);
                     setSelectedTreeId(first?.tree_id || "");
                     setSelectedOrderId(first?.order_id || "");
@@ -501,7 +513,7 @@ export default function AdminTreeMaintenancePage() {
             </div>
           </Panel>
 
-          <Panel title="2. AG Trees / Orders" subtitle="Select one order to assign.">
+          <Panel title="2. AG Trees / Orders" subtitle={queue === "uploaded" ? "Select an uploaded caretaker task to verify." : queue === "completed" ? "Completed tasks are kept here for record review." : "Select one order to assign."}>
             {uniqueTrees.length === 0 ? (
               <Empty text="Select a customer with records." />
             ) : (
@@ -540,7 +552,7 @@ export default function AdminTreeMaintenancePage() {
             )}
           </Panel>
 
-          <Panel title="3. Assign / Review" subtitle="Create or update one caretaker task for the selected order.">
+          <Panel title="3. Assign / Review" subtitle={queue === "uploaded" ? "Verify caretaker submission, return it, or send it back to customer as completed." : queue === "completed" ? "Review completed caretaker submissions already sent back to customer." : "Create or update one caretaker task for the selected order."}>
             {!selectedOrder ? (
               <Empty text="Select an order first." />
             ) : (
@@ -634,23 +646,27 @@ export default function AdminTreeMaintenancePage() {
                   </section>
                 )}
 
-                <div>
-                  <label className="text-xs font-black uppercase tracking-wide text-slate-500">Farmer / Caretaker</label>
-                  <select value={selectedGardenerId} onChange={(event) => setSelectedGardenerId(event.target.value)} className={`mt-2 w-full ${controlClass}`}>
-                    <option value="">Select caretaker</option>
-                    {gardeners.map((gardener) => (
-                      <option key={gardener.id} value={gardener.id}>
-                        {gardener.full_name || gardener.email} - {gardener.email}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {queue !== "completed" && (
+                  <>
+                    <div>
+                      <label className="text-xs font-black uppercase tracking-wide text-slate-500">Farmer / Caretaker</label>
+                      <select value={selectedGardenerId} onChange={(event) => setSelectedGardenerId(event.target.value)} className={`mt-2 w-full ${controlClass}`}>
+                        <option value="">Select caretaker</option>
+                        {gardeners.map((gardener) => (
+                          <option key={gardener.id} value={gardener.id}>
+                            {gardener.full_name || gardener.email} - {gardener.email}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                <textarea value={adminNote} onChange={(event) => setAdminNote(event.target.value)} rows={5} placeholder="Admin note for caretaker" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
+                    <textarea value={adminNote} onChange={(event) => setAdminNote(event.target.value)} rows={5} placeholder="Admin note for caretaker" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
 
-                <button onClick={assignCaretaker} disabled={saving || !selectedGardenerId} className="w-full rounded-2xl bg-emerald-600 px-6 py-5 text-base font-black text-white shadow-sm hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500">
-                  {saving ? "Saving..." : selectedOrder.assignment_id ? "Update Caretaker Assignment" : "Assign Caretaker"}
-                </button>
+                    <button onClick={assignCaretaker} disabled={saving || !selectedGardenerId} className="w-full rounded-2xl bg-emerald-600 px-6 py-5 text-base font-black text-white shadow-sm hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500">
+                      {saving ? "Saving..." : selectedOrder.assignment_id ? "Update Caretaker Assignment" : "Assign Caretaker"}
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </Panel>
@@ -788,6 +804,26 @@ function needsProofReview(record: MaintenanceRecord) {
   return ["COMPLETED", "DONE", "SUBMITTED", "PENDING_ADMIN_REVIEW"].includes(normalize(record.assignment_status)) && !hasCompleteProof(record);
 }
 
+function isCompletedRecord(record: MaintenanceRecord) {
+  return normalize(record.assignment_status) === "COMPLETED" || normalize(record.work_status) === "COMPLETED" || ["APPROVED", "VERIFIED"].includes(normalize(record.latest_log_status));
+}
+
+function isUploadedRecord(record: MaintenanceRecord) {
+  return normalize(record.assignment_status) === "PENDING_ADMIN_REVIEW" || normalize(record.work_status) === "PENDING_ADMIN_REVIEW" || normalize(record.latest_log_status) === "PENDING_ADMIN_REVIEW";
+}
+
+function recordQueue(record: MaintenanceRecord): QueueKey {
+  if (isCompletedRecord(record)) return "completed";
+  if (isUploadedRecord(record) || needsProofReview(record)) return "uploaded";
+  return "active";
+}
+
+function queueSubtitle(queue: QueueKey) {
+  if (queue === "uploaded") return "Customers with caretaker submissions waiting for admin verification.";
+  if (queue === "completed") return "Customers with verified caretaker submissions already returned to customer records.";
+  return "Customers with paid requests, ready assignments, or active caretaker work.";
+}
+
 function proofLabel(record: MaintenanceRecord) {
   if (hasCompleteProof(record)) return record.latest_log_status || "PENDING_ADMIN_REVIEW";
   if (needsProofReview(record)) return "MISSING PROOF";
@@ -810,6 +846,20 @@ function Panel({ title, subtitle, children }: { title: string; subtitle: string;
       <p className="mt-1 text-sm leading-6 text-slate-600">{subtitle}</p>
       <div className="mt-5">{children}</div>
     </section>
+  );
+}
+
+function QueueButton({ title, detail, count, active, onClick }: { title: string; detail: string; count: number; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className={`rounded-[1.5rem] border p-5 text-left shadow-sm transition ${active ? "border-emerald-400 bg-emerald-600 text-white ring-2 ring-emerald-100" : "border-emerald-100 bg-white text-slate-950 hover:border-emerald-300"}`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className={`text-xs font-black uppercase tracking-wide ${active ? "text-emerald-50" : "text-emerald-700"}`}>{title}</p>
+          <p className={`mt-2 text-xs font-bold leading-5 ${active ? "text-white/75" : "text-slate-500"}`}>{detail}</p>
+        </div>
+        <span className={`rounded-2xl px-4 py-2 text-xl font-black ${active ? "bg-white text-emerald-700" : "bg-emerald-50 text-emerald-800"}`}>{count}</span>
+      </div>
+    </button>
   );
 }
 
