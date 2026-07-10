@@ -12,6 +12,15 @@ const requiredProfileFields = [
 ];
 
 const KYC_BUCKET = "kyc-documents";
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const ALLOWED_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+  "application/pdf",
+]);
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<AnyRow | null>(null);
@@ -22,26 +31,40 @@ export default function ProfilePage() {
   const [selfieFile, setSelfieFile] = useState<File | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem("sur_login_email") || "";
-    if (saved) loadProfile(saved);
+    loadProfile();
   }, []);
 
-  async function loadProfile(targetEmail = localStorage.getItem("sur_login_email") || "") {
+  async function resolveLoginEmail() {
+    const { data } = await supabase.auth.getUser();
+    const authEmail = data.user?.email?.toLowerCase().trim();
+    const savedEmail = localStorage.getItem("sur_login_email")?.toLowerCase().trim();
+    return authEmail || savedEmail || "";
+  }
+
+  async function loadProfile(targetEmail?: string) {
     setLoading(true);
     setMessage("");
 
-    const cleanEmail = targetEmail.toLowerCase().trim();
+    const cleanEmail = (targetEmail || (await resolveLoginEmail())).toLowerCase().trim();
+
+    if (!cleanEmail) {
+      setMessage("No login email found. Please login again.");
+      setProfile(null);
+      setLoading(false);
+      return;
+    }
 
     const { data, error } = await supabase
       .from("profiles")
       .select("*")
-      .eq("email", cleanEmail)
+      .ilike("email", cleanEmail)
       .maybeSingle();
 
     if (error || !data) {
-      setMessage(error?.message || "Profile not found.");
+      setMessage(error?.message || `Profile not found for ${cleanEmail}.`);
       setProfile(null);
       setLoading(false);
       return;
@@ -51,7 +74,7 @@ export default function ProfilePage() {
     setFullName(data.full_name || "");
     setMobile(data.mobile || data.mobile_number || "");
     setAddress(data.address || "");
-    localStorage.setItem("sur_login_email", cleanEmail);
+    localStorage.setItem("sur_login_email", String(data.email || cleanEmail).toLowerCase());
     localStorage.setItem("sur_profile_id", data.id);
     setLoading(false);
   }
@@ -65,6 +88,11 @@ export default function ProfilePage() {
     setLoading(true);
     setMessage("");
 
+    const nextKycStatus =
+      String(profile.kyc_status || "").toUpperCase() === "REJECTED"
+        ? "PENDING"
+        : profile.kyc_status || "PENDING";
+
     const { error } = await supabase
       .from("profiles")
       .update({
@@ -72,17 +100,18 @@ export default function ProfilePage() {
         mobile: mobile.trim(),
         mobile_number: mobile.trim(),
         address: address.trim(),
-        kyc_status: String(profile.kyc_status || "").toUpperCase() === "REJECTED" ? "PENDING" : profile.kyc_status,
+        kyc_status: nextKycStatus,
+        kyc_updated_at: new Date().toISOString(),
       })
       .eq("id", profile.id);
 
     if (error) {
-      setMessage(error.message);
+      setMessage(`Profile save failed: ${error.message}`);
       setLoading(false);
       return;
     }
 
-    setMessage("Profile saved. Admin can now review your KYC status.");
+    setMessage("Profile saved. Admin can now review your details.");
     await loadProfile(profile.email);
   }
 
@@ -97,25 +126,46 @@ export default function ProfilePage() {
       return;
     }
 
-    setLoading(true);
+    const files = [
+      { label: "Valid ID", file: validIdFile },
+      { label: "Selfie", file: selfieFile },
+    ].filter((item): item is { label: string; file: File } => Boolean(item.file));
+
+    for (const item of files) {
+      const problem = validateFile(item.file);
+      if (problem) {
+        setMessage(`${item.label}: ${problem}`);
+        return;
+      }
+    }
+
+    setUploading(true);
     setMessage("");
 
     try {
+      const now = new Date().toISOString();
       const updates: AnyRow = {
         kyc_status: String(profile.kyc_status || "").toUpperCase() === "APPROVED" ? "APPROVED" : "PENDING",
-        kyc_submitted_at: new Date().toISOString(),
+        kyc_submitted_at: now,
+        kyc_updated_at: now,
       };
 
       if (validIdFile) {
-        updates.kyc_id_url = await uploadProfileFile(profile.id, "valid-id", validIdFile);
+        const validIdUrl = await uploadProfileFile(profile.id, "valid-id", validIdFile);
+        updates.kyc_id_url = validIdUrl;
+        updates.kyc_document_url = validIdUrl;
+        updates.valid_id_url = validIdUrl;
       }
 
       if (selfieFile) {
-        updates.kyc_selfie_url = await uploadProfileFile(profile.id, "selfie", selfieFile);
+        const selfieUrl = await uploadProfileFile(profile.id, "selfie", selfieFile);
+        updates.kyc_selfie_url = selfieUrl;
+        updates.kyc_photo_url = selfieUrl;
+        updates.selfie_url = selfieUrl;
       }
 
       const { error } = await supabase.from("profiles").update(updates).eq("id", profile.id);
-      if (error) throw error;
+      if (error) throw new Error(`Profile update failed after upload: ${error.message}`);
 
       setValidIdFile(null);
       setSelfieFile(null);
@@ -123,22 +173,27 @@ export default function ProfilePage() {
       await loadProfile(profile.email);
     } catch (err: any) {
       setMessage(err?.message || "Unable to upload KYC documents.");
-      setLoading(false);
     }
+
+    setUploading(false);
   }
 
   async function uploadProfileFile(profileId: string, kind: string, file: File) {
-    const extension = file.name.split(".").pop() || "jpg";
-    const path = `${profileId}/${kind}-${Date.now()}.${extension}`;
-    const { error } = await supabase.storage.from(KYC_BUCKET).upload(path, file, {
+    const extension = cleanExtension(file.name, file.type);
+    const safeKind = kind.replace(/[^a-z0-9-]/gi, "").toLowerCase();
+    const path = `${profileId}/${safeKind}-${Date.now()}.${extension}`;
+
+    const { data, error } = await supabase.storage.from(KYC_BUCKET).upload(path, file, {
       cacheControl: "3600",
+      contentType: file.type || undefined,
       upsert: true,
     });
 
-    if (error) throw error;
+    if (error) throw new Error(`${kind} upload failed: ${error.message}`);
 
-    const { data } = supabase.storage.from(KYC_BUCKET).getPublicUrl(path);
-    return data.publicUrl;
+    const { data: publicData } = supabase.storage.from(KYC_BUCKET).getPublicUrl(data.path);
+    if (!publicData.publicUrl) throw new Error(`${kind} uploaded but public URL was not created.`);
+    return publicData.publicUrl;
   }
 
   const completion = useMemo(() => {
@@ -168,14 +223,14 @@ export default function ProfilePage() {
                 KYC and Profile
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-white/78 lg:text-base">
-                Keep your legal profile, contact details, and payout account ready for admin review.
+                Keep your legal profile, contact details, and identity documents ready for admin review.
               </p>
             </div>
 
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={() => loadProfile()}
-                disabled={loading}
+                disabled={loading || uploading}
                 className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 shadow-sm hover:bg-white/90 disabled:opacity-60"
               >
                 {loading ? "Loading..." : "Refresh"}
@@ -228,7 +283,7 @@ export default function ProfilePage() {
                   <Info label="Name" value={profile.full_name || "-"} />
                   <Info label="Email" value={profile.email || "-"} />
                   <Info label="Created" value={formatDate(profile.created_at)} />
-                  <Info label="Referral Code" value={profile.referral_code || "Pending"} />
+                  <Info label="KYC Submitted" value={formatDate(profile.kyc_submitted_at)} />
                 </div>
               ) : (
                 <Empty text="Load your profile to see account status." />
@@ -262,7 +317,7 @@ export default function ProfilePage() {
                 />
                 <button
                   onClick={saveProfile}
-                  disabled={loading || !profile}
+                  disabled={loading || uploading || !profile}
                   className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
                   Save KYC Details
@@ -275,32 +330,23 @@ export default function ProfilePage() {
               <p className="mt-1 text-sm text-slate-600">Upload a clear valid ID and selfie/photo for admin inspection.</p>
 
               <div className="mt-5 grid gap-4">
-                <label className="rounded-2xl border border-dashed border-teal-200 bg-white/80 p-4">
-                  <span className="text-sm font-black text-slate-950">Valid ID photo</span>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(event) => setValidIdFile(event.target.files?.[0] || null)}
-                    className="mt-3 block w-full text-sm font-bold text-slate-700 file:mr-4 file:rounded-xl file:border-0 file:bg-emerald-600 file:px-4 file:py-2 file:text-sm file:font-black file:text-white"
-                  />
-                </label>
-
-                <label className="rounded-2xl border border-dashed border-teal-200 bg-white/80 p-4">
-                  <span className="text-sm font-black text-slate-950">Selfie or verification photo</span>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(event) => setSelfieFile(event.target.files?.[0] || null)}
-                    className="mt-3 block w-full text-sm font-bold text-slate-700 file:mr-4 file:rounded-xl file:border-0 file:bg-emerald-600 file:px-4 file:py-2 file:text-sm file:font-black file:text-white"
-                  />
-                </label>
+                <FileBox
+                  label="Valid ID photo"
+                  file={validIdFile}
+                  onChange={setValidIdFile}
+                />
+                <FileBox
+                  label="Selfie or verification photo"
+                  file={selfieFile}
+                  onChange={setSelfieFile}
+                />
 
                 <button
                   onClick={uploadKycDocuments}
-                  disabled={loading || !profile}
+                  disabled={uploading || loading || !profile}
                   className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
-                  Upload KYC for Review
+                  {uploading ? "Uploading KYC..." : "Upload KYC for Review"}
                 </button>
               </div>
 
@@ -312,11 +358,37 @@ export default function ProfilePage() {
                 )}
               </div>
             </section>
-
           </div>
         </section>
       </div>
     </main>
+  );
+}
+
+function FileBox({
+  label,
+  file,
+  onChange,
+}: {
+  label: string;
+  file: File | null;
+  onChange: (file: File | null) => void;
+}) {
+  return (
+    <label className="rounded-2xl border border-dashed border-teal-200 bg-white/80 p-4">
+      <span className="text-sm font-black text-slate-950">{label}</span>
+      <input
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
+        onChange={(event) => onChange(event.target.files?.[0] || null)}
+        className="mt-3 block w-full text-sm font-bold text-slate-700 file:mr-4 file:rounded-xl file:border-0 file:bg-emerald-600 file:px-4 file:py-2 file:text-sm file:font-black file:text-white"
+      />
+      {file && (
+        <p className="mt-3 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-800">
+          Selected: {file.name}
+        </p>
+      )}
+    </label>
   );
 }
 
@@ -331,11 +403,12 @@ function HeroStat({ label, value }: { label: string; value: string }) {
 
 function Badge({ value }: { value: string }) {
   const status = String(value || "PENDING").toUpperCase();
-  const style = status === "APPROVED" || status === "ACTIVE"
-    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-    : status === "REJECTED" || status === "SUSPENDED"
-      ? "border-red-200 bg-red-50 text-red-800"
-      : "border-amber-200 bg-amber-50 text-amber-800";
+  const style =
+    status === "APPROVED" || status === "ACTIVE"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : status === "REJECTED" || status === "SUSPENDED"
+        ? "border-red-200 bg-red-50 text-red-800"
+        : "border-amber-200 bg-amber-50 text-amber-800";
 
   return <span className={`rounded-full border px-3 py-1 text-xs font-black ${style}`}>{status}</span>;
 }
@@ -387,7 +460,11 @@ function KycFile({ label, url }: { label: string; url: string }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-white bg-white/80">
       {isImageUrl(url) ? (
-        <img src={url} alt={label} className="h-44 w-full object-cover" />
+        <a href={url} target="_blank" rel="noreferrer">
+          <img src={url} alt={label} className="h-44 w-full object-cover" />
+        </a>
+      ) : isPdfUrl(url) ? (
+        <iframe src={url} title={label} className="h-44 w-full bg-slate-100" />
       ) : (
         <div className="flex h-44 items-center justify-center bg-slate-100 text-sm font-black text-slate-600">Document file</div>
       )}
@@ -401,6 +478,25 @@ function KycFile({ label, url }: { label: string; url: string }) {
   );
 }
 
+function validateFile(file: File) {
+  if (file.size > MAX_FILE_SIZE) return "File is larger than 10MB.";
+  if (file.type && !ALLOWED_TYPES.has(file.type)) return `Unsupported file type: ${file.type}`;
+  return "";
+}
+
+function cleanExtension(fileName: string, fileType: string) {
+  const raw = fileName.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (raw) return raw === "jpeg" ? "jpg" : raw;
+  if (fileType === "image/png") return "png";
+  if (fileType === "image/webp") return "webp";
+  if (fileType === "application/pdf") return "pdf";
+  return "jpg";
+}
+
 function isImageUrl(url: string) {
-  return /\.(png|jpe?g|webp|gif|bmp|avif)(\?|#|$)/i.test(url);
+  return /\.(png|jpe?g|webp|gif|bmp|avif|heic|heif)(\?|#|$)/i.test(url);
+}
+
+function isPdfUrl(url: string) {
+  return /\.pdf(\?|#|$)/i.test(url);
 }

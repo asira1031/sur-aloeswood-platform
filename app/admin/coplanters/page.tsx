@@ -13,7 +13,7 @@ export default function AdminCoPlantersPage() {
   const [selected, setSelected] = useState<AnyRow | null>(null);
   const [search, setSearch] = useState("");
   const [accountFilter, setAccountFilter] = useState("ALL");
-  const [kycFilter, setKycFilter] = useState("PENDING");
+  const [kycFilter, setKycFilter] = useState("ALL");
   const [busyId, setBusyId] = useState("");
   const [message, setMessage] = useState("");
 
@@ -29,6 +29,7 @@ export default function AdminCoPlantersPage() {
         supabase
           .from("profiles")
           .select("*")
+          .in("role", ["COPLANTER", "INVESTOR", "ADMIN"])
           .order("created_at", { ascending: false }),
         supabase.from("wallets").select("id, profile_id, balance, updated_at"),
         supabase.from("memberships").select("id, profile_id, membership_plan, annual_fee, status, start_date, expiry_date, created_at"),
@@ -56,6 +57,7 @@ export default function AdminCoPlantersPage() {
       (current) =>
         safeProfiles.find((profile) => profile.id === urlProfileId) ||
         safeProfiles.find((profile) => profile.id === current?.id) ||
+        safeProfiles.find((profile) => getKycFiles(profile).length > 0) ||
         safeProfiles[0] ||
         null
     );
@@ -107,12 +109,7 @@ export default function AdminCoPlantersPage() {
       const { error } = await supabase.from("profiles").update(updatePayload).eq("id", profile.id);
       if (error) throw error;
 
-      await supabase.from("notifications").insert({
-        profile_id: profile.id,
-        title: `Account ${accountStatus.toLowerCase()}`,
-        message: `Your co-planter account is now ${accountStatus}.`,
-        is_read: false,
-      });
+      await notifyProfile(profile.id, `Account ${accountStatus.toLowerCase()}`, `Your co-planter account is now ${accountStatus}.`);
 
       setMessage(`Co-planter updated to ${accountStatus}.`);
       await loadData();
@@ -131,6 +128,8 @@ export default function AdminCoPlantersPage() {
       .from("profiles")
       .update({
         kyc_status: "APPROVED",
+        kyc_verified_at: new Date().toISOString(),
+        kyc_updated_at: new Date().toISOString(),
       })
       .eq("id", profile.id);
 
@@ -140,12 +139,7 @@ export default function AdminCoPlantersPage() {
       return;
     }
 
-    await supabase.from("notifications").insert({
-      profile_id: profile.id,
-      title: "KYC approved",
-      message: "Your KYC verification has been approved.",
-      is_read: false,
-    });
+    await notifyProfile(profile.id, "KYC approved", "Your KYC verification has been approved.");
 
     setMessage("KYC approved.");
     await loadData();
@@ -160,6 +154,7 @@ export default function AdminCoPlantersPage() {
       .from("profiles")
       .update({
         kyc_status: "REJECTED",
+        kyc_updated_at: new Date().toISOString(),
       })
       .eq("id", profile.id);
 
@@ -169,16 +164,24 @@ export default function AdminCoPlantersPage() {
       return;
     }
 
-    await supabase.from("notifications").insert({
-      profile_id: profile.id,
-      title: "KYC rejected",
-      message: "Your KYC verification was rejected. Please update your profile details or contact support.",
-      is_read: false,
-    });
+    await notifyProfile(
+      profile.id,
+      "KYC rejected",
+      "Your KYC verification was rejected. Please upload clearer documents or update your profile details."
+    );
 
     setMessage("KYC rejected.");
     await loadData();
     setBusyId("");
+  }
+
+  async function notifyProfile(profileId: string, title: string, body: string) {
+    await supabase.from("notifications").insert({
+      profile_id: profileId,
+      title,
+      message: body,
+      is_read: false,
+    });
   }
 
   const filtered = useMemo(() => {
@@ -186,7 +189,7 @@ export default function AdminCoPlantersPage() {
 
     return profiles.filter((profile) => {
       const accountOk = accountFilter === "ALL" || String(profile.account_status || "").toUpperCase() === accountFilter;
-      const kycOk = kycFilter === "ALL" || String(profile.kyc_status || "").toUpperCase() === kycFilter;
+      const kycOk = kycFilter === "ALL" || getKycViewStatus(profile) === kycFilter;
       const text = JSON.stringify(profile).toLowerCase();
       return accountOk && kycOk && (!keyword || text.includes(keyword));
     });
@@ -196,8 +199,9 @@ export default function AdminCoPlantersPage() {
   const selectedMembership = selected ? membershipFor(selected.id) : null;
   const selectedLinkedAccounts = selected ? linkedFor(selected.id) : [];
   const selectedKycFiles = selected ? getKycFiles(selected) : [];
-  const pendingKyc = profiles.filter((profile) => String(profile.kyc_status || "").toUpperCase() === "PENDING").length;
-  const approvedKyc = profiles.filter((profile) => String(profile.kyc_status || "").toUpperCase() === "APPROVED").length;
+  const pendingKyc = profiles.filter((profile) => getKycViewStatus(profile) === "PENDING").length;
+  const submittedKyc = profiles.filter((profile) => getKycViewStatus(profile) === "SUBMITTED").length;
+  const approvedKyc = profiles.filter((profile) => getKycViewStatus(profile) === "APPROVED").length;
   const activeAccounts = profiles.filter((profile) => String(profile.account_status || "").toUpperCase() === "ACTIVE").length;
 
   return (
@@ -215,7 +219,7 @@ export default function AdminCoPlantersPage() {
                 Co-Planter Verification
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-white/78 lg:text-base">
-                Review profile readiness, payout references, account status, and KYC decisions in one clean workspace.
+                Review uploaded IDs, selfie photos, profile details, payout references, and KYC decisions in one clean workspace.
               </p>
             </div>
 
@@ -235,8 +239,9 @@ export default function AdminCoPlantersPage() {
             </div>
           </div>
 
-          <div className="relative z-10 mt-8 grid gap-3 md:grid-cols-3">
+          <div className="relative z-10 mt-8 grid gap-3 md:grid-cols-4">
             <HeroStat label="Pending KYC" value={String(pendingKyc)} />
+            <HeroStat label="Submitted Files" value={String(submittedKyc)} />
             <HeroStat label="KYC Approved" value={String(approvedKyc)} />
             <HeroStat label="Active Accounts" value={String(activeAccounts)} />
           </div>
@@ -249,8 +254,8 @@ export default function AdminCoPlantersPage() {
         </section>
 
         <section className="grid gap-4 py-5 md:grid-cols-4">
-          <Metric tone="white" title="Total Co-Planters" value={String(profiles.length)} detail="All profile records" />
-          <Metric tone="forest" title="Pending KYC" value={String(pendingKyc)} detail="Needs review" />
+          <Metric tone="white" title="Total Records" value={String(profiles.length)} detail="Profiles visible to admin" />
+          <Metric tone="forest" title="Needs Review" value={String(submittedKyc)} detail="Uploaded KYC documents" />
           <Metric tone="gold" title="Approved KYC" value={String(approvedKyc)} detail="Verified identities" />
           <Metric tone="mist" title="Linked Accounts" value={String(linkedAccounts.length)} detail="Payout references" />
         </section>
@@ -260,7 +265,7 @@ export default function AdminCoPlantersPage() {
             <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
               <div>
                 <h2 className="text-2xl font-black text-slate-950">KYC Queue</h2>
-                <p className="mt-1 text-sm text-slate-600">Select a co-planter to review account and verification details.</p>
+                <p className="mt-1 text-sm text-slate-600">Select a co-planter to review uploaded documents.</p>
               </div>
               <div className="grid gap-2 sm:grid-cols-3 xl:max-w-xl">
                 <input
@@ -285,7 +290,8 @@ export default function AdminCoPlantersPage() {
                   className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
                 >
                   <option value="ALL">All KYC</option>
-                  <option value="PENDING">Pending KYC</option>
+                  <option value="PENDING">Pending only</option>
+                  <option value="SUBMITTED">Submitted files</option>
                   <option value="APPROVED">Approved</option>
                   <option value="REJECTED">Rejected</option>
                 </select>
@@ -298,6 +304,7 @@ export default function AdminCoPlantersPage() {
               ) : (
                 filtered.map((profile) => {
                   const isSelected = selected?.id === profile.id;
+                  const files = getKycFiles(profile);
                   return (
                     <button
                       key={profile.id}
@@ -310,11 +317,13 @@ export default function AdminCoPlantersPage() {
                         <div>
                           <p className="text-lg font-black text-slate-950">{profile.full_name || profile.email}</p>
                           <p className="mt-1 text-sm font-bold text-slate-600">{profile.email}</p>
-                          <p className="mt-1 text-xs font-bold text-slate-500">Referral: {profile.referral_code || "Pending"}</p>
+                          <p className="mt-1 text-xs font-bold text-slate-500">
+                            {files.length} KYC file{files.length === 1 ? "" : "s"} uploaded
+                          </p>
                         </div>
                         <div className="flex flex-wrap justify-end gap-2">
                           <Badge value={profile.account_status || "PENDING"} />
-                          <Badge value={profile.kyc_status || "PENDING"} />
+                          <Badge value={getKycViewStatus(profile)} />
                         </div>
                       </div>
                     </button>
@@ -328,9 +337,9 @@ export default function AdminCoPlantersPage() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-2xl font-black text-slate-950">Verification Detail</h2>
-                <p className="mt-1 text-sm text-slate-600">Approve only when the profile and payout reference are complete.</p>
+                <p className="mt-1 text-sm text-slate-600">Approve only when ID, selfie, and profile details match.</p>
               </div>
-              {selected && <Badge value={selected.kyc_status || "PENDING"} />}
+              {selected && <Badge value={getKycViewStatus(selected)} />}
             </div>
 
             {!selected ? (
@@ -350,6 +359,7 @@ export default function AdminCoPlantersPage() {
                   <Info label="Wallet" value={peso(selectedWallet?.balance ?? selected.wallet_balance)} />
                   <Info label="Membership Plan" value={selectedMembership?.membership_plan || "-"} />
                   <Info label="KYC Submitted" value={formatDate(firstText(selected, ["kyc_submitted_at", "kyc_updated_at", "updated_at"]))} />
+                  <Info label="KYC Verified" value={formatDate(selected.kyc_verified_at)} />
                   <Info label="Created" value={formatDate(selected.created_at)} />
                 </div>
 
@@ -357,7 +367,7 @@ export default function AdminCoPlantersPage() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <h3 className="text-lg font-black text-slate-950">Uploaded KYC Documents</h3>
-                      <p className="mt-1 text-sm text-slate-600">Inspect the uploaded ID and selfie/photo before approving KYC.</p>
+                      <p className="mt-1 text-sm text-slate-600">Open each document and compare with the profile details.</p>
                     </div>
                     <Badge value={selectedKycFiles.length > 0 ? "FILES READY" : "NO FILES"} />
                   </div>
@@ -413,7 +423,7 @@ export default function AdminCoPlantersPage() {
                     Suspend Account
                   </button>
                   <button
-                    disabled={busyId === selected.id}
+                    disabled={busyId === selected.id || selectedKycFiles.length === 0}
                     onClick={() => approveKyc(selected)}
                     className="rounded-2xl bg-amber-400 px-6 py-4 text-sm font-black text-amber-950 hover:bg-amber-300 disabled:opacity-60"
                   >
@@ -474,11 +484,14 @@ function Metric({
 
 function Badge({ value }: { value: string }) {
   const status = String(value || "PENDING").toUpperCase();
-  const style = status === "APPROVED" || status === "ACTIVE"
-    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-    : status === "REJECTED" || status === "SUSPENDED"
-      ? "border-red-200 bg-red-50 text-red-800"
-      : "border-amber-200 bg-amber-50 text-amber-800";
+  const style =
+    status === "APPROVED" || status === "ACTIVE" || status === "FILES READY"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : status === "REJECTED" || status === "SUSPENDED" || status === "NO FILES"
+        ? "border-red-200 bg-red-50 text-red-800"
+        : status === "SUBMITTED"
+          ? "border-blue-200 bg-blue-50 text-blue-800"
+          : "border-amber-200 bg-amber-50 text-amber-800";
 
   return <span className={`rounded-full border px-3 py-1 text-xs font-black ${style}`}>{status}</span>;
 }
@@ -498,6 +511,13 @@ function Empty({ text }: { text: string }) {
       {text}
     </div>
   );
+}
+
+function getKycViewStatus(profile: AnyRow) {
+  const status = String(profile.kyc_status || "PENDING").toUpperCase();
+  if (status === "APPROVED" || status === "REJECTED") return status;
+  if (getKycFiles(profile).length > 0) return "SUBMITTED";
+  return "PENDING";
 }
 
 function getKycFiles(profile: AnyRow) {
@@ -521,17 +541,17 @@ function KycPreview({ label, url }: { label: string; url: string }) {
     <div className="overflow-hidden rounded-2xl border border-white bg-white/90 shadow-sm">
       {isImageUrl(url) ? (
         <a href={url} target="_blank" rel="noreferrer">
-          <img src={url} alt={label} className="h-56 w-full object-cover" />
+          <img src={url} alt={label} className="h-60 w-full object-cover" />
         </a>
       ) : isPdfUrl(url) ? (
-        <iframe src={url} title={label} className="h-56 w-full bg-slate-100" />
+        <iframe src={url} title={label} className="h-60 w-full bg-slate-100" />
       ) : (
-        <div className="flex h-56 items-center justify-center bg-slate-100 text-sm font-black text-slate-600">Document file</div>
+        <div className="flex h-60 items-center justify-center bg-slate-100 text-sm font-black text-slate-600">Document file</div>
       )}
       <div className="flex items-center justify-between gap-3 p-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm font-black text-slate-950">{label}</p>
-          <p className="mt-1 break-all text-xs font-bold text-slate-500">{url}</p>
+          <p className="mt-1 truncate text-xs font-bold text-slate-500">{url}</p>
         </div>
         <a href={url} target="_blank" rel="noreferrer" className="shrink-0 rounded-xl bg-slate-950 px-4 py-2 text-xs font-black text-white">
           Open
@@ -542,7 +562,7 @@ function KycPreview({ label, url }: { label: string; url: string }) {
 }
 
 function isImageUrl(url: string) {
-  return /\.(png|jpe?g|webp|gif|bmp|avif)(\?|#|$)/i.test(url);
+  return /\.(png|jpe?g|webp|gif|bmp|avif|heic|heif)(\?|#|$)/i.test(url);
 }
 
 function isPdfUrl(url: string) {
