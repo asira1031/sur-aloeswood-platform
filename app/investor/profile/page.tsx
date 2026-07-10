@@ -221,6 +221,9 @@ export default function ProfilePage() {
   const kycStatus = String(profile?.kyc_status || "PENDING").toUpperCase();
   const accountStatus = String(profile?.account_status || "PENDING").toUpperCase();
   const currentKycFiles = profile ? getKycFiles(profile) : [];
+  const hasSubmittedKyc = currentKycFiles.length > 0;
+  const kycApproved = kycStatus === "APPROVED";
+  const kycRejected = kycStatus === "REJECTED";
 
   return (
     <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
@@ -270,9 +273,17 @@ export default function ProfilePage() {
             </div>
           )}
 
-          {profile && currentKycFiles.length > 0 && (
+          {profile && hasSubmittedKyc && !kycRejected && (
             <div className="relative z-10 mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-bold text-emerald-900">
-              KYC submitted successfully. Admin can now review your uploaded documents.
+              {kycApproved
+                ? "KYC approved. Your verification record is complete."
+                : "KYC submitted successfully. Please wait for admin approval."}
+            </div>
+          )}
+
+          {profile && kycRejected && (
+            <div className="relative z-10 mt-5 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-900">
+              KYC was rejected. Please update your details or upload clearer documents for review.
             </div>
           )}
         </section>
@@ -312,82 +323,174 @@ export default function ProfilePage() {
           </div>
 
           <div className="space-y-5">
-            <section className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
-              <h2 className="text-2xl font-black text-slate-950">Legal Profile Details</h2>
-              <p className="mt-1 text-sm text-slate-600">These values are what admin sees during KYC review.</p>
-              <div className="mt-5 grid gap-4">
-                <input
-                  value={fullName}
-                  onChange={(event) => setFullName(event.target.value)}
-                  placeholder="Legal full name"
-                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
-                />
-                <input
-                  value={mobile}
-                  onChange={(event) => setMobile(event.target.value)}
-                  placeholder="Mobile number"
-                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
-                />
-                <textarea
-                  value={address}
-                  onChange={(event) => setAddress(event.target.value)}
-                  rows={4}
-                  placeholder="Complete address"
-                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
-                />
-                <button
-                  onClick={saveProfile}
-                  disabled={loading || uploading || !profile}
-                  className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60"
-                >
-                  Save KYC Details
-                </button>
-              </div>
-            </section>
+            {hasSubmittedKyc && !kycRejected ? (
+              <section className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-2xl font-black text-slate-950">
+                      {kycApproved ? "KYC Approved" : "KYC Submitted"}
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {kycApproved
+                        ? "Your identity documents were approved by admin."
+                        : "Your documents are now with admin for verification."}
+                    </p>
+                  </div>
+                  <Badge value={kycApproved ? "APPROVED" : "WAITING APPROVAL"} />
+                </div>
 
-            <section className="rounded-[2rem] border border-teal-100 bg-teal-50/75 p-5 shadow-sm lg:p-6">
-              <h2 className="text-2xl font-black text-slate-950">KYC Document Upload</h2>
-              <p className="mt-1 text-sm text-slate-600">Upload a clear valid ID and selfie/photo for admin inspection.</p>
+                <div className="mt-5 grid gap-3 md:grid-cols-2">
+                  <Info label="Submitted" value={formatDate(profile?.kyc_submitted_at)} />
+                  <Info label="Status" value={kycApproved ? "Approved" : "Waiting for admin approval"} />
+                </div>
 
-              <div className="mt-5 grid gap-4">
-                <FileBox
-                  label="Valid ID photo"
-                  file={validIdFile}
-                  inputRef={validIdInputRef}
-                  onChange={setValidIdFile}
-                />
-                <FileBox
-                  label="Selfie or verification photo"
-                  file={selfieFile}
-                  inputRef={selfieInputRef}
-                  onChange={setSelfieFile}
-                />
+                <div className="mt-5 grid gap-3 md:grid-cols-2">
+                  {currentKycFiles.map((file) => <KycFile key={file.label} label={file.label} url={file.url} />)}
+                </div>
 
-                <button
-                  onClick={uploadKycDocuments}
-                  disabled={uploading || loading || !profile}
-                  className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60"
-                >
-                  {uploading
-                    ? "Uploading KYC..."
-                    : currentKycFiles.length > 0
-                      ? "Replace / Re-upload KYC"
-                      : "Upload KYC for Review"}
-                </button>
-              </div>
-
-              <div className="mt-5 grid gap-3 md:grid-cols-2">
-                {currentKycFiles.length === 0 ? (
-                  <Empty text="No KYC files uploaded yet." />
-                ) : (
-                  currentKycFiles.map((file) => <KycFile key={file.label} label={file.label} url={file.url} />)
+                {!kycApproved && (
+                  <details className="mt-5 rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/50 p-4">
+                    <summary className="cursor-pointer text-sm font-black text-emerald-900">
+                      Replace submitted KYC files
+                    </summary>
+                    <KycUploadFields
+                      validIdFile={validIdFile}
+                      selfieFile={selfieFile}
+                      validIdInputRef={validIdInputRef}
+                      selfieInputRef={selfieInputRef}
+                      setValidIdFile={setValidIdFile}
+                      setSelfieFile={setSelfieFile}
+                      uploadKycDocuments={uploadKycDocuments}
+                      uploading={uploading}
+                      loading={loading}
+                      hasProfile={Boolean(profile)}
+                      hasSubmittedKyc={hasSubmittedKyc}
+                    />
+                  </details>
                 )}
-              </div>
-            </section>
+              </section>
+            ) : (
+              <>
+                <section className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
+                  <h2 className="text-2xl font-black text-slate-950">Legal Profile Details</h2>
+                  <p className="mt-1 text-sm text-slate-600">These values are what admin sees during KYC review.</p>
+                  <div className="mt-5 grid gap-4">
+                    <input
+                      value={fullName}
+                      onChange={(event) => setFullName(event.target.value)}
+                      placeholder="Legal full name"
+                      className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
+                    />
+                    <input
+                      value={mobile}
+                      onChange={(event) => setMobile(event.target.value)}
+                      placeholder="Mobile number"
+                      className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
+                    />
+                    <textarea
+                      value={address}
+                      onChange={(event) => setAddress(event.target.value)}
+                      rows={4}
+                      placeholder="Complete address"
+                      className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
+                    />
+                    <button
+                      onClick={saveProfile}
+                      disabled={loading || uploading || !profile}
+                      className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60"
+                    >
+                      Save KYC Details
+                    </button>
+                  </div>
+                </section>
+
+                <section className="rounded-[2rem] border border-teal-100 bg-teal-50/75 p-5 shadow-sm lg:p-6">
+                  <h2 className="text-2xl font-black text-slate-950">KYC Document Upload</h2>
+                  <p className="mt-1 text-sm text-slate-600">Upload a clear valid ID and selfie/photo for admin inspection.</p>
+
+                  <KycUploadFields
+                    validIdFile={validIdFile}
+                    selfieFile={selfieFile}
+                    validIdInputRef={validIdInputRef}
+                    selfieInputRef={selfieInputRef}
+                    setValidIdFile={setValidIdFile}
+                    setSelfieFile={setSelfieFile}
+                    uploadKycDocuments={uploadKycDocuments}
+                    uploading={uploading}
+                    loading={loading}
+                    hasProfile={Boolean(profile)}
+                    hasSubmittedKyc={hasSubmittedKyc}
+                  />
+
+                  <div className="mt-5 grid gap-3 md:grid-cols-2">
+                    {currentKycFiles.length === 0 ? (
+                      <Empty text="No KYC files uploaded yet." />
+                    ) : (
+                      currentKycFiles.map((file) => <KycFile key={file.label} label={file.label} url={file.url} />)
+                    )}
+                  </div>
+                </section>
+              </>
+            )}
           </div>
         </section>
       </div>
     </main>
+  );
+}
+
+function KycUploadFields({
+  validIdFile,
+  selfieFile,
+  validIdInputRef,
+  selfieInputRef,
+  setValidIdFile,
+  setSelfieFile,
+  uploadKycDocuments,
+  uploading,
+  loading,
+  hasProfile,
+  hasSubmittedKyc,
+}: {
+  validIdFile: File | null;
+  selfieFile: File | null;
+  validIdInputRef: RefObject<HTMLInputElement | null>;
+  selfieInputRef: RefObject<HTMLInputElement | null>;
+  setValidIdFile: (file: File | null) => void;
+  setSelfieFile: (file: File | null) => void;
+  uploadKycDocuments: () => void;
+  uploading: boolean;
+  loading: boolean;
+  hasProfile: boolean;
+  hasSubmittedKyc: boolean;
+}) {
+  return (
+    <div className="mt-5 grid gap-4">
+      <FileBox
+        label="Valid ID photo"
+        file={validIdFile}
+        inputRef={validIdInputRef}
+        onChange={setValidIdFile}
+      />
+      <FileBox
+        label="Selfie or verification photo"
+        file={selfieFile}
+        inputRef={selfieInputRef}
+        onChange={setSelfieFile}
+      />
+
+      <button
+        onClick={uploadKycDocuments}
+        disabled={uploading || loading || !hasProfile}
+        className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60"
+      >
+        {uploading
+          ? "Uploading KYC..."
+          : hasSubmittedKyc
+            ? "Replace / Re-upload KYC"
+            : "Upload KYC for Review"}
+      </button>
+    </div>
   );
 }
 
