@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { supabase } from "@/app/lib/supabase/client";
 import { formatDate, type AnyRow } from "@/app/lib/coplanting/ui";
 
@@ -32,6 +33,8 @@ export default function ProfilePage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const validIdInputRef = useRef<HTMLInputElement | null>(null);
+  const selfieInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     loadProfile();
@@ -121,14 +124,17 @@ export default function ProfilePage() {
       return;
     }
 
-    if (!validIdFile && !selfieFile) {
+    const selectedValidIdFile = validIdFile || validIdInputRef.current?.files?.[0] || null;
+    const selectedSelfieFile = selfieFile || selfieInputRef.current?.files?.[0] || null;
+
+    if (!selectedValidIdFile && !selectedSelfieFile) {
       setMessage("Choose at least one KYC file to upload.");
       return;
     }
 
     const files = [
-      { label: "Valid ID", file: validIdFile },
-      { label: "Selfie", file: selfieFile },
+      { label: "Valid ID", file: selectedValidIdFile },
+      { label: "Selfie", file: selectedSelfieFile },
     ].filter((item): item is { label: string; file: File } => Boolean(item.file));
 
     for (const item of files) {
@@ -150,15 +156,15 @@ export default function ProfilePage() {
         kyc_updated_at: now,
       };
 
-      if (validIdFile) {
-        const validIdUrl = await uploadProfileFile(profile.id, "valid-id", validIdFile);
+      if (selectedValidIdFile) {
+        const validIdUrl = await uploadProfileFile(profile.id, "valid-id", selectedValidIdFile);
         updates.kyc_id_url = validIdUrl;
         updates.kyc_document_url = validIdUrl;
         updates.valid_id_url = validIdUrl;
       }
 
-      if (selfieFile) {
-        const selfieUrl = await uploadProfileFile(profile.id, "selfie", selfieFile);
+      if (selectedSelfieFile) {
+        const selfieUrl = await uploadProfileFile(profile.id, "selfie", selectedSelfieFile);
         updates.kyc_selfie_url = selfieUrl;
         updates.kyc_photo_url = selfieUrl;
         updates.selfie_url = selfieUrl;
@@ -169,6 +175,8 @@ export default function ProfilePage() {
 
       setValidIdFile(null);
       setSelfieFile(null);
+      if (validIdInputRef.current) validIdInputRef.current.value = "";
+      if (selfieInputRef.current) selfieInputRef.current.value = "";
       setMessage("KYC documents uploaded. Admin can inspect them for verification.");
       await loadProfile(profile.email);
     } catch (err: any) {
@@ -333,11 +341,13 @@ export default function ProfilePage() {
                 <FileBox
                   label="Valid ID photo"
                   file={validIdFile}
+                  inputRef={validIdInputRef}
                   onChange={setValidIdFile}
                 />
                 <FileBox
                   label="Selfie or verification photo"
                   file={selfieFile}
+                  inputRef={selfieInputRef}
                   onChange={setSelfieFile}
                 />
 
@@ -368,16 +378,19 @@ export default function ProfilePage() {
 function FileBox({
   label,
   file,
+  inputRef,
   onChange,
 }: {
   label: string;
   file: File | null;
+  inputRef: RefObject<HTMLInputElement | null>;
   onChange: (file: File | null) => void;
 }) {
   return (
     <label className="rounded-2xl border border-dashed border-teal-200 bg-white/80 p-4">
       <span className="text-sm font-black text-slate-950">{label}</span>
       <input
+        ref={inputRef}
         type="file"
         accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
         onChange={(event) => onChange(event.target.files?.[0] || null)}
