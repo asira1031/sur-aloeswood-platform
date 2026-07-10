@@ -171,23 +171,53 @@ export default function CareServicesPage() {
     }
 
     const safeTrees = (treeRows || []) as Tree[];
-    const treeIds = safeTrees.map((tree) => tree.id);
+    const safeOrders = normalizeMaintenanceOrders((orderResult.data || []) as MaintenanceOrder[]);
+    const treeIds = safeTrees.map((tree) => tree.id).filter(Boolean);
+    const treeCodes = safeTrees.map((tree) => tree.tree_code).filter(Boolean);
+    const orderIds = safeOrders.map((order) => order.id).filter(Boolean);
     let logRows: GrowthLog[] = [];
 
-    if (treeIds.length > 0) {
-      const { data } = await supabase
-        .from("tree_growth_logs")
-        .select("id, profile_id, tree_id, tree_code, gardener_id, height_cm, diameter_cm, health_status, remarks, notes, photo_url, status, created_at")
-        .in("tree_id", treeIds)
-        .order("created_at", { ascending: false });
+    if (treeIds.length > 0 || treeCodes.length > 0 || orderIds.length > 0) {
+      const [profileLogResult, treeLogResult, orderLogResult] = await Promise.all([
+        supabase
+          .from("tree_growth_logs")
+          .select("id, profile_id, tree_id, tree_code, maintenance_order_id, gardener_id, height_cm, diameter_cm, health_status, remarks, notes, photo_url, serial_photo_url, submitted_denr_tag_number, status, created_at")
+          .eq("profile_id", profileRow.id)
+          .order("created_at", { ascending: false }),
+        treeIds.length
+          ? supabase
+              .from("tree_growth_logs")
+              .select("id, profile_id, tree_id, tree_code, maintenance_order_id, gardener_id, height_cm, diameter_cm, health_status, remarks, notes, photo_url, serial_photo_url, submitted_denr_tag_number, status, created_at")
+              .in("tree_id", treeIds)
+              .order("created_at", { ascending: false })
+          : Promise.resolve({ data: [], error: null }),
+        orderIds.length
+          ? supabase
+              .from("tree_growth_logs")
+              .select("id, profile_id, tree_id, tree_code, maintenance_order_id, gardener_id, height_cm, diameter_cm, health_status, remarks, notes, photo_url, serial_photo_url, submitted_denr_tag_number, status, created_at")
+              .in("maintenance_order_id", orderIds)
+              .order("created_at", { ascending: false })
+          : Promise.resolve({ data: [], error: null }),
+      ]);
 
-      logRows = (data || []) as GrowthLog[];
+      const mergedLogs = [
+        ...((profileLogResult.data || []) as GrowthLog[]),
+        ...((treeLogResult.data || []) as GrowthLog[]),
+        ...((orderLogResult.data || []) as GrowthLog[]),
+      ];
+
+      logRows = uniqueLogs(mergedLogs).filter((log) => {
+        const logTreeId = String(log.tree_id || "");
+        const logTreeCode = String(log.tree_code || "");
+        const logOrderId = String(log.maintenance_order_id || "");
+        return treeIds.includes(logTreeId) || treeCodes.includes(logTreeCode) || orderIds.includes(logOrderId) || log.profile_id === profileRow.id;
+      });
     }
 
     setProfile(profileRow as Profile);
     setWallet(walletRow || null);
     setTrees(safeTrees);
-    setOrders(normalizeMaintenanceOrders((orderResult.data || []) as MaintenanceOrder[]));
+    setOrders(safeOrders);
     setLogs(logRows);
     setSelectedTreeId((current) => {
       if (current && safeTrees.some((tree) => tree.id === current)) return current;
@@ -350,8 +380,16 @@ export default function CareServicesPage() {
     [trees, selectedTreeId]
   );
   const selectedServiceItem = maintenanceServices.find((item) => item.key === selectedService) || maintenanceServices[0];
-  const treeOrders = orders.filter((order) => order.tree_id === selectedTree?.id);
-  const selectedLogs = logs.filter((log) => log.tree_id === selectedTree?.id);
+  const treeOrders = orders.filter((order) => order.tree_id === selectedTree?.id || order.tree_code === selectedTree?.tree_code);
+  const selectedOrderIds = treeOrders.map((order) => order.id).filter(Boolean);
+  const selectedLogs = logs.filter((log) => {
+    if (!selectedTree) return false;
+    return (
+      log.tree_id === selectedTree.id ||
+      log.tree_code === selectedTree.tree_code ||
+      selectedOrderIds.includes(log.maintenance_order_id)
+    );
+  });
   const latestPhoto = selectedLogs.find((log) => Boolean(log.photo_url));
   const canPayNow = Number(wallet?.balance || 0) >= Number(selectedServiceItem.amount || 0);
 
@@ -540,7 +578,7 @@ export default function CareServicesPage() {
 
                   <section className="rounded-[1.5rem] border border-emerald-100 bg-emerald-50/70 p-4">
                     <h3 className="text-lg font-black text-slate-950">Caretaker Submissions</h3>
-                    <p className="mt-1 text-xs font-bold text-slate-500">Photos, growth logs, and field remarks submitted by farmer/caretaker.</p>
+                    <p className="mt-1 text-xs font-bold text-slate-500">Tree photos, tag close-ups, visible serials, and admin review status.</p>
                     <div className="mt-3 grid gap-3">
                       {selectedLogs.length === 0 ? (
                         <Empty text="No caretaker submissions yet for this tree." />
@@ -561,12 +599,21 @@ export default function CareServicesPage() {
                             <div className="mt-3 grid gap-2 text-xs font-bold text-slate-500 sm:grid-cols-2">
                               <span>Height: {log.height_cm || "-"} cm</span>
                               <span>Diameter: {log.diameter_cm || "-"} cm</span>
+                              <span>Visible Tag: {log.submitted_denr_tag_number || "-"}</span>
+                              <span>Admin Status: {log.status || "PENDING"}</span>
                             </div>
-                            {log.photo_url && (
-                              <a href={log.photo_url} target="_blank" className="mt-3 inline-flex text-xs font-black text-emerald-700">
-                                Open full photo
-                              </a>
-                            )}
+                            <div className="mt-3 flex flex-wrap gap-3">
+                              {log.photo_url && (
+                                <a href={log.photo_url} target="_blank" className="inline-flex text-xs font-black text-emerald-700">
+                                  Open tree photo
+                                </a>
+                              )}
+                              {log.serial_photo_url && (
+                                <a href={log.serial_photo_url} target="_blank" className="inline-flex text-xs font-black text-emerald-700">
+                                  Open tag photo
+                                </a>
+                              )}
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -636,5 +683,20 @@ function normalizeMaintenanceOrders(rows: MaintenanceOrder[]) {
   return rows.map((order) => {
     const amount = getOrderAmount(order);
     return amount === Number(order.amount || 0) ? order : { ...order, amount };
+  });
+}
+
+function uniqueLogs(rows: GrowthLog[]) {
+  const byKey = new Map<string, GrowthLog>();
+
+  for (const row of rows) {
+    const key = String(row.id || `${row.tree_id || row.tree_code || "tree"}-${row.maintenance_order_id || "order"}-${row.created_at || Math.random()}`);
+    if (!byKey.has(key)) byKey.set(key, row);
+  }
+
+  return Array.from(byKey.values()).sort((a, b) => {
+    const aTime = new Date(a.created_at || 0).getTime();
+    const bTime = new Date(b.created_at || 0).getTime();
+    return bTime - aTime;
   });
 }
