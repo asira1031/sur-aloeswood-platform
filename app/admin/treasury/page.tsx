@@ -32,6 +32,7 @@ function profileName(profile?: AnyRow | null) {
 }
 
 export default function AdminTreasuryPage() {
+  const [adminEmail, setAdminEmail] = useState("");
   const [profiles, setProfiles] = useState<AnyRow[]>([]);
   const [wallets, setWallets] = useState<AnyRow[]>([]);
   const [cashins, setCashins] = useState<AnyRow[]>([]);
@@ -49,6 +50,7 @@ export default function AdminTreasuryPage() {
   const [withdrawalProof, setWithdrawalProof] = useState<File | null>(null);
 
   useEffect(() => {
+    setAdminEmail(localStorage.getItem("sur_login_email") || "");
     loadTreasury();
   }, []);
 
@@ -103,7 +105,9 @@ export default function AdminTreasuryPage() {
       return;
     }
 
-    const { error } = await supabase.rpc("sur_admin_verify_cashin", {
+    const cleanAdminEmail = adminEmail || localStorage.getItem("sur_login_email") || "";
+    const { error } = await supabase.rpc("sur_admin_verify_cashin_by_email", {
+      p_admin_email: cleanAdminEmail,
       p_cashin_request_id: row.id,
     });
 
@@ -128,7 +132,9 @@ export default function AdminTreasuryPage() {
       return;
     }
 
-    const { error } = await supabase.rpc("sur_admin_reject_cashin", {
+    const cleanAdminEmail = adminEmail || localStorage.getItem("sur_login_email") || "";
+    const { error } = await supabase.rpc("sur_admin_reject_cashin_by_email", {
+      p_admin_email: cleanAdminEmail,
       p_cashin_request_id: row.id,
       p_reason: reason,
     });
@@ -182,7 +188,9 @@ export default function AdminTreasuryPage() {
 
     try {
       const proofUrl = await uploadWithdrawalProof(row, withdrawalProof);
-      const { error } = await supabase.rpc("sur_admin_settle_withdrawal", {
+      const cleanAdminEmail = adminEmail || localStorage.getItem("sur_login_email") || "";
+      const { error } = await supabase.rpc("sur_admin_settle_withdrawal_by_email", {
+        p_admin_email: cleanAdminEmail,
         p_withdrawal_request_id: row.id,
         p_settlement_reference: settlementReference.trim(),
         p_proof_url: proofUrl,
@@ -213,7 +221,9 @@ export default function AdminTreasuryPage() {
       return;
     }
 
-    const { error } = await supabase.rpc("sur_admin_reject_withdrawal", {
+    const cleanAdminEmail = adminEmail || localStorage.getItem("sur_login_email") || "";
+    const { error } = await supabase.rpc("sur_admin_reject_withdrawal_by_email", {
+      p_admin_email: cleanAdminEmail,
       p_withdrawal_request_id: row.id,
       p_reason: reason,
     });
