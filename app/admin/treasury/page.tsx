@@ -117,7 +117,7 @@ export default function AdminTreasuryPage() {
       return;
     }
 
-    setMessage("Cash-in verified. Wallet credited and TDI platform fee allocation recorded.");
+    setMessage("Cash-in verified. Full amount credited to the customer wallet.");
     await loadTreasury();
     setBusyId("");
   }
@@ -282,7 +282,7 @@ export default function AdminTreasuryPage() {
               <p className="text-xs font-black uppercase tracking-[0.32em] text-white/75">SUR Aloeswood Admin</p>
               <h1 className="mt-4 max-w-3xl text-4xl font-black leading-tight text-white lg:text-6xl">Treasury Center</h1>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-white/78 lg:text-base">
-                Manual cash-in verification, withdrawal checking, wallet credit control, and TDI platform fee ledger.
+                Manual cash-in verification, withdrawal checking, wallet credit control, and withdrawal fee ledger.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -380,14 +380,27 @@ export default function AdminTreasuryPage() {
                   )}
                 </div>
 
-                <div className="mt-5 rounded-3xl border border-amber-100 bg-amber-50/80 p-4">
-                  <p className="text-sm font-black text-slate-950">Platform Fee to TDI</p>
-                  <div className="mt-4 grid gap-3 md:grid-cols-3">
-                    <Info label="Gross" value={peso(feeQuote?.gross)} />
-                    <Info label="TDI Fee" value={peso(feeQuote?.fee)} />
-                    <Info label={tab === "CASHIN" ? "Wallet Credit" : "Net Payout"} value={peso(feeQuote?.net)} />
+                {tab === "CASHIN" ? (
+                  <div className="mt-5 rounded-3xl border border-emerald-100 bg-emerald-50/80 p-4">
+                    <p className="text-sm font-black text-slate-950">Cash-In Credit</p>
+                    <p className="mt-1 text-xs font-bold leading-6 text-slate-600">
+                      Cash-in has no platform fee. After admin verifies the proof, the full amount is credited to the customer wallet.
+                    </p>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <Info label="Verified Cash-In" value={peso(selected.amount)} />
+                      <Info label="Wallet Credit" value={peso(selected.amount)} />
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="mt-5 rounded-3xl border border-amber-100 bg-amber-50/80 p-4">
+                    <p className="text-sm font-black text-slate-950">Platform Fee to TDI</p>
+                    <div className="mt-4 grid gap-3 md:grid-cols-3">
+                      <Info label="Gross" value={peso(feeQuote?.gross)} />
+                      <Info label="TDI Fee" value={peso(feeQuote?.fee)} />
+                      <Info label="Net Payout" value={peso(feeQuote?.net)} />
+                    </div>
+                  </div>
+                )}
 
                 <div className="mt-5 rounded-3xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-sm font-black text-slate-950">{tab === "CASHIN" ? "Payment Proof Photo" : "Settlement Proof Photo"}</p>

@@ -43,8 +43,7 @@ type CashInRequest = {
   sender_name?: string | null;
   sender_account?: string | null;
   proof_url?: string | null;
-  platform_fee?: number | null;
-  net_amount?: number | null;
+
   approved_at?: string | null;
   created_at: string | null;
 };
