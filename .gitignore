@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# TOH local runtime evidence and snapshots
+/toh/generated/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

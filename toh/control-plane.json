@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "applicationId": "direk-tony-sur-aloeswood-platform",
+  "applicationName": "UNKNOWN",
+  "authority": { "currentLevel": 0, "label": "OBSERVE", "writeActionsFrozen": true, "humanApprovalRequiredFromLevel": 3 },
+  "protectedDomains": ["financial", "ownership", "identity", "authentication", "permissions", "rls", "kyc", "legal", "production-schema", "destructive", "deployment"],
+  "evidencePriority": ["OWNER_DEFINED", "RUNTIME_OBSERVED", "TEST_DERIVED", "DATABASE_DERIVED", "CODE_DERIVED", "DOCUMENTATION_DERIVED", "HISTORICAL", "AI_INFERRED"],
+  "proofOfDone": ["SOURCE", "BUILD", "TEST", "DATABASE", "ROLE", "BROWSER", "INVARIANT", "REGRESSION", "DEPLOYMENT"]
+}

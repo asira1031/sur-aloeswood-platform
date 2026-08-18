@@ -31,22 +31,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     async function verifyAdminAccess() {
       setChecking(true);
 
-      const localEmail = localStorage.getItem("sur_login_email");
-      const localRole = normalizeRole(localStorage.getItem("sur_profile_role"));
-      const localStatus = String(localStorage.getItem("sur_account_status") || "").toUpperCase();
-
-      if (
-        localEmail &&
-        ["ADMIN", "SUPER_ADMIN", "STAFF"].includes(localRole) &&
-        localStatus === "ACTIVE"
-      ) {
-        if (mounted) {
-          setAllowed(true);
-          setChecking(false);
-        }
-        return;
-      }
-
       const profile = await getAuthenticatedProfile();
 
       if (!profile) {

@@ -240,48 +240,16 @@ export default function CareServicesPage() {
 
     const service = maintenanceServices.find((item) => item.key === selectedService) || maintenanceServices[0];
     const amount = Number(service.amount || 0);
-    const walletBalance = Number(wallet?.balance || 0);
-    const shouldPayNow = amount > 0 && walletBalance >= amount;
     const reference = `MAINT-${Date.now()}`;
 
     setSubmitting(true);
-
-    if (shouldPayNow && wallet?.id) {
-      const nextBalance = walletBalance - amount;
-      const { error: walletError } = await supabase
-        .from("wallets")
-        .update({ balance: nextBalance, updated_at: new Date().toISOString() })
-        .eq("id", wallet.id);
-
-      if (walletError) {
-        setSubmitting(false);
-        setMessage(walletError.message);
-        return;
-      }
-
-      await supabase.from("profiles").update({ wallet_balance: nextBalance }).eq("id", profile.id);
-      await supabase.from("wallet_transactions").insert({
-        profile_id: profile.id,
-        transaction_type: "MAINTENANCE_PAYMENT",
-        amount,
-        description: `${service.title} payment for ${selectedTree.tree_code}. Reference: ${reference}.`,
-        status: "APPROVED",
-      });
-    }
-
-    const paymentStatus = amount <= 0 ? "FOR_QUOTE" : shouldPayNow ? "PAID" : "PENDING_PAYMENT";
-    const workStatus = paymentStatus === "PAID" ? "READY_FOR_ASSIGNMENT" : paymentStatus;
-    const { error } = await supabase.from("maintenance_orders").insert({
-      profile_id: profile.id,
-      tree_id: selectedTree.id,
-      tree_code: selectedTree.tree_code,
-      service_type: service.key,
-      plan_type: service.plan,
-      amount,
-      payment_status: paymentStatus,
-      work_status: workStatus,
-      payment_reference: reference,
-      customer_note: note.trim() || null,
+    const { data: resultRows, error } = await supabase.rpc("create_maintenance_order_with_wallet", {
+      p_tree_id: selectedTree.id,
+      p_service_type: service.key,
+      p_plan_type: service.plan,
+      p_amount: amount,
+      p_customer_note: note.trim(),
+      p_reference: reference,
     });
 
     setSubmitting(false);
@@ -291,6 +259,8 @@ export default function CareServicesPage() {
       return;
     }
 
+    const result = Array.isArray(resultRows) ? resultRows[0] : resultRows;
+    const paymentStatus = String(result?.payment_status || "PENDING_PAYMENT");
     setNote("");
     setMessage(
       paymentStatus === "PAID"
@@ -311,64 +281,26 @@ export default function CareServicesPage() {
     }
 
     const amount = getOrderAmount(order);
-    const walletBalance = Number(wallet?.balance || 0);
-
     if (amount <= 0) {
       setMessage("This request is still waiting for admin quotation.");
       return;
     }
 
-    if (!wallet?.id || walletBalance < amount) {
+    if (!wallet?.id || Number(wallet.balance || 0) < amount) {
       setMessage(`Wallet balance is not enough. Please cash-in at least ${peso(amount)} before paying this order.`);
       return;
     }
 
     setSubmitting(true);
-    const nextBalance = walletBalance - amount;
-
-    const { error: walletError } = await supabase
-      .from("wallets")
-      .update({ balance: nextBalance, updated_at: new Date().toISOString() })
-      .eq("id", wallet.id);
-
-    if (walletError) {
-      setSubmitting(false);
-      setMessage(walletError.message);
-      return;
-    }
-
-    await supabase.from("profiles").update({ wallet_balance: nextBalance }).eq("id", profile.id);
-    await supabase.from("wallet_transactions").insert({
-      profile_id: profile.id,
-      transaction_type: "MAINTENANCE_PAYMENT",
-      amount,
-      description: `${serviceTitle(order.service_type)} payment for ${order.tree_code || selectedTree?.tree_code || "AG Tree"}. Reference: ${order.payment_reference || order.id}.`,
-      status: "APPROVED",
+    const { error } = await supabase.rpc("pay_maintenance_order_with_wallet", {
+      p_order_id: order.id,
     });
-
-    const { error } = await supabase
-      .from("maintenance_orders")
-      .update({
-        payment_status: "PAID",
-        work_status: "READY_FOR_ASSIGNMENT",
-        paid_at: new Date().toISOString(),
-        amount,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", order.id);
 
     if (error) {
       setSubmitting(false);
       setMessage(error.message);
       return;
     }
-
-    await supabase.from("notifications").insert({
-      profile_id: profile.id,
-      title: "Maintenance payment received",
-      message: `${serviceTitle(order.service_type)} for ${order.tree_code || selectedTree?.tree_code || "your AG tree"} is now paid and ready for admin assignment.`,
-      is_read: false,
-    });
 
     setSubmitting(false);
     setMessage("Maintenance quote paid from wallet and sent to admin for caretaker assignment.");

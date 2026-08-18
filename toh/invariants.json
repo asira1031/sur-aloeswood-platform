@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "invariants": [
+    {"id":"SEC-001","condition":"A protected action is requested","expected":"Authenticated actor, authorized role, deterministic validation, and audit evidence exist","severity":"CRITICAL","remediationClass":"APPROVAL_REQUIRED","runtimeCheck":"NOT_IMPLEMENTED"},
+    {"id":"FIN-001","condition":"A wallet balance changes","expected":"A single authoritative transaction exists and balance/ledger remain consistent","severity":"CRITICAL","remediationClass":"STRICT_PROTECTION","runtimeCheck":"NOT_IMPLEMENTED"},
+    {"id":"FIN-002","condition":"A financial operation is retried","expected":"The operation is idempotent and produces no duplicate debit, credit, or allocation","severity":"CRITICAL","remediationClass":"STRICT_PROTECTION","runtimeCheck":"NOT_IMPLEMENTED"},
+    {"id":"OWN-001","condition":"A user is shown as owner of a tree","expected":"The authoritative tree registry agrees with the authenticated profile","severity":"CRITICAL","remediationClass":"STRICT_PROTECTION","runtimeCheck":"NOT_IMPLEMENTED"},
+    {"id":"WF-001","condition":"A workflow is reported COMPLETE","expected":"Every required downstream step and visible result has verified evidence","severity":"HIGH","remediationClass":"HOLD","runtimeCheck":"LOCAL_MODEL_ONLY"},
+    {"id":"AUTH-001","condition":"A profile update is submitted","expected":"The user cannot change protected role, approval, identity, or financial fields","severity":"CRITICAL","remediationClass":"STRICT_PROTECTION","runtimeCheck":"SQL_MIGRATION_PRESENT_LIVE_UNVERIFIED"},
+    {"id":"DEPLOY-001","condition":"Production is declared current","expected":"Git HEAD, deployment commit, environment identity, and migration version agree","severity":"HIGH","remediationClass":"HOLD","runtimeCheck":"NOT_IMPLEMENTED"}
+  ]
+}

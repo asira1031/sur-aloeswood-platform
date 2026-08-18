@@ -4,6 +4,7 @@ import "./globals.css";
 import RegisterServiceWorker from "@/app/components/RegisterServiceWorker";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
   title: "SUR Aloeswood | Co-Planter Management Platform",
   description:
     "Secure plantation, wallet, certificate, and co-planter management platform for SUR Aloeswood.",

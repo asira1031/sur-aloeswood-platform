@@ -114,39 +114,17 @@ export default function RecoveryPage() {
     if (!profile || !selectedTree) return;
 
     setSubmitting(true);
-    const requestAmount = RECOVERY_FUND_ALLOCATION;
     const reference = `RF-${Date.now()}`;
-    const treeLabel = selectedTree.tree_code || "AG Tree";
-    const treeReference = `TREE_ID:${selectedTree.id}. TREE_CODE:${treeLabel}.`;
-    const { error } = await supabase.from("wallet_transactions").insert([
-      {
-        profile_id: profile.id,
-        transaction_type: "RECOVERY_TERMINATION_REQUEST",
-        amount: requestAmount,
-        description: `Recovery Fund termination request ${reference}. ${treeReference} Customer accepted contract termination notice before submission.`,
-        status: "PENDING",
-      },
-      {
-        profile_id: profile.id,
-        transaction_type: "SYSTEM_MONEY_RECOVERY_HOLD",
-        amount: requestAmount,
-        description: `System money hold for ${reference}. ${treeReference} Pending admin approval; real payout remains manual settlement through approved payment channels.`,
-        status: "PENDING",
-      },
-    ]);
+    const { error } = await supabase.rpc("request_recovery_termination", {
+      p_tree_id: selectedTree.id,
+      p_reference: reference,
+    });
     setSubmitting(false);
 
     if (error) {
       setMessage(error.message);
       return;
     }
-
-    await supabase.from("notifications").insert({
-      profile_id: profile.id,
-      title: "Recovery Fund request submitted",
-      message: `Your Recovery Fund request for ${treeLabel} is now recorded in system money and pending admin review.`,
-      is_read: false,
-    });
 
     setSelectedTree(null);
     setShowConfirm(false);
@@ -308,7 +286,7 @@ export default function RecoveryPage() {
                 <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
                   <p className="text-xs font-black uppercase tracking-wide text-red-200/70">Source of Fund</p>
                   <p className="mt-2 text-sm font-bold leading-7 text-red-50">
-                    This tree's recovery value is {peso(RECOVERY_FUND_ALLOCATION)}. The vault total increases when another approved tree is registered and reaches withdrawable status at {peso(RECOVERY_FUND_WITHDRAWAL_MINIMUM)}.
+                    This tree&apos;s recovery value is {peso(RECOVERY_FUND_ALLOCATION)}. The vault total increases when another approved tree is registered and reaches withdrawable status at {peso(RECOVERY_FUND_WITHDRAWAL_MINIMUM)}.
                   </p>
                 </div>
                 <div className="rounded-2xl border border-red-500/20 bg-black/35 p-4">

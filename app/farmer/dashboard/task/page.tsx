@@ -376,6 +376,8 @@ export default function FarmerTaskPage() {
   async function uploadCaretakerPhoto(task: CaretakerTask, file: File, kind: "tree" | "tag") {
     const extension = file.name.split(".").pop() || "jpg";
     const safeCode = task.tree_code.replace(/[^a-zA-Z0-9-]/g, "-");
+    // This runs only from the user-triggered upload handler, not during render.
+    // eslint-disable-next-line react-hooks/purity
     const path = `${task.assignment_id}/${safeCode}-${kind}-${Date.now()}.${extension}`;
 
     const { error } = await supabase.storage.from(CARETAKER_UPLOAD_BUCKET).upload(path, file, {

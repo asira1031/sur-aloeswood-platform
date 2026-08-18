@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "incidents": [
+    {"id":"INC-2026-001","symptom":"PowerShell refused to execute npm.ps1","workflow":"local-development","rootCause":"System PowerShell execution policy blocks the npm.ps1 wrapper","confidence":"CONFIRMED","fix":"Use npm.cmd on this Windows machine","result":"Owner commands ran successfully","preventionRule":"All documented PowerShell commands use npm.cmd","provenance":"RUNTIME_OBSERVED"},
+    {"id":"INC-2026-002","symptom":"PGRST205 for buddy_app_overview","workflow":"toh-database-read","rootCause":"The allowlisted view was absent or not visible in the PostgREST schema cache at that time","confidence":"HIGH_CONFIDENCE","fix":"Owner created/exposed the read-only view and refreshed availability","result":"Subsequent authenticated read returned data","preventionRule":"Verify allowlisted view existence, grant, policy, and schema-cache visibility before reader rollout","provenance":"RUNTIME_OBSERVED"},
+    {"id":"INC-2026-003","symptom":"SQL query failed because health_status did not exist","workflow":"database-inspection","rootCause":"The query assumed a column not proven by the live schema","confidence":"CONFIRMED","fix":"Inspect actual columns before selecting optional health fields","result":"A valid aggregate query later returned total_trees","preventionRule":"Never generate schema-specific SQL from an unverified UI or documentation label","provenance":"RUNTIME_OBSERVED"}
+  ]
+}

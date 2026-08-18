@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { enforceRateLimit } from "@/app/lib/security/server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -9,6 +10,14 @@ function normalizeRole(role?: string | null) {
 }
 
 export async function POST(request: NextRequest) {
+  const rateLimit = enforceRateLimit(request, "farmer-register", 5, 60 * 60 * 1000);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many registration attempts. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
+    );
+  }
+
   if (!supabaseUrl || !serviceRoleKey) {
     return NextResponse.json(
       { error: "Farmer registration needs SUPABASE_SERVICE_ROLE_KEY on the server." },
@@ -64,25 +73,15 @@ export async function POST(request: NextRequest) {
   let authUserId = existingAuthUser?.id || null;
 
   if (existingAuthUser) {
-    const role = normalizeRole(existingAuthUser.user_metadata?.role);
-    if (role && !["FARMER", "GARDENER", "CARETAKER"].includes(role)) {
-      return NextResponse.json({ error: "This login email already exists for another role." }, { status: 409 });
-    }
-
-    const { error: updateAuthError } = await admin.auth.admin.updateUserById(existingAuthUser.id, {
-      password,
-      email_confirm: true,
-      user_metadata: { full_name: fullName, role: "FARMER" },
-    });
-
-    if (updateAuthError) {
-      return NextResponse.json({ error: updateAuthError.message }, { status: 500 });
-    }
+    return NextResponse.json(
+      { error: "An account already exists for this email. Use login or password recovery." },
+      { status: 409 },
+    );
   } else {
     const { data: createAuthData, error: createAuthError } = await admin.auth.admin.createUser({
       email,
       password,
-      email_confirm: true,
+      email_confirm: false,
       user_metadata: { full_name: fullName, role: "FARMER" },
     });
 
@@ -100,9 +99,9 @@ export async function POST(request: NextRequest) {
     mobile_number: mobile || null,
     role: "FARMER",
     auth_user_id: authUserId,
-    account_status: "ACTIVE",
-    kyc_status: "APPROVED",
-    membership_status: "ACTIVE",
+    account_status: "PENDING",
+    kyc_status: "PENDING",
+    membership_status: "PENDING",
   };
 
   const profileSave = existingProfile
@@ -128,7 +127,7 @@ export async function POST(request: NextRequest) {
     email,
     mobile: mobile || null,
     resume_url: resumeUrl,
-    status: "ACTIVE",
+    status: "PENDING",
   };
 
   const gardenerSave = existingGardener
