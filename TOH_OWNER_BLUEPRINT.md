@@ -62,7 +62,7 @@ Confirm or correct every rule. Values currently found in source are observations
 - Required test coverage before deployment: `[OWNER INPUT REQUIRED]`
 - Staging environment requirement: `[OWNER INPUT REQUIRED]`
 - Backup/rollback requirement: `[OWNER INPUT REQUIRED]`
-- External providers that are approved: `[OWNER INPUT REQUIRED]`
+- External providers that are approved: `OpenAI Responses API for admin-only TOH reasoning, approved 2026-08-18; no tools or mutation authority. Other providers: [OWNER INPUT REQUIRED]`
 
 ## 6. Security blueprint
 

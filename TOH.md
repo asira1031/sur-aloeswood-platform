@@ -38,6 +38,19 @@ The old command remains compatible:
 npm.cmd run buddy:read -- read buddy_app_overview 25
 ```
 
+## In-app TOH
+
+Active admins can open `/admin/toh`. The page sends the current Supabase session token to the server-only `/api/toh/chat` route. TOH has no database, deployment, or mutation tools; it receives only the admin's question and the bounded application context documented in source.
+
+Add these values to `.env.local` for local use and to the Vercel project's server environment for deployment. Never commit or paste the key into chat:
+
+```env
+OPENAI_API_KEY=your_server_only_key
+TOH_OPENAI_MODEL=gpt-5.6-luna
+```
+
+Without `OPENAI_API_KEY`, the same page safely returns deterministic evidence guidance. With the key, it uses the OpenAI Responses API with `store: false`, no tools, a 4,000-character question limit, and an admin-only rate limit.
+
 ## Authority and safety
 
 - Authority Level 0: Observe.

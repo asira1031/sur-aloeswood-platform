@@ -15,7 +15,7 @@ This matrix prevents “TOH is finished” from meaning more than the evidence p
 | Phase 3 living system model | Regeneratable JSON model | Implemented locally | `toh refresh`, `toh/generated/system-model.json` |
 | Phase 4 owner blueprint | Fill-up blueprint exists | Waiting for owner | `TOH_OWNER_BLUEPRINT.md` contains required owner inputs |
 | Blueprint lock | Owner-dependent work is held when blueprint is incomplete | Implemented as policy/gate | `toh health`, control plane |
-| Phase 5 LLM reasoning | No model runtime configured | Not implemented | Requires provider/model decision, key handling, tool policy, and cost approval |
+| Phase 5 LLM reasoning | Admin-only OpenAI Responses API route plus deterministic no-key fallback | Implemented; configuration required | Owner approved OpenAI on 2026-08-18; add server-only `OPENAI_API_KEY`; no tools exposed |
 | Phase 6 anti-malfunction | Local reconciliation finds source/RPC drift | Partial | Live state checks and containment are not implemented |
 | Phase 7 expected vs actual | Workflow trace emits expected steps and runtime-unproven boundary | Implemented locally | `toh trace <workflow>` |
 | Phase 8 root cause | Incident protocol and confidence vocabulary documented | Partial | No runtime evidence collector or hypothesis executor |
@@ -41,7 +41,7 @@ This matrix prevents “TOH is finished” from meaning more than the evidence p
 | Phase 28 incident memory | Three structured historical incidents | Implemented locally | Needs durable append/review workflow and version links |
 | Phase 29 provenance | Evidence priority and labels | Implemented locally | Automated per-belief provenance is partial |
 | Phase 30 confidence decay | Local model detects commit, dirty-worktree, and evidence-age decay | Implemented locally | Deployment/schema version comparison still unavailable |
-| Phase 31 teacher mode | Plain-language docs and proof explanations | Partial | No in-app owner teaching interface |
+| Phase 31 teacher mode | Plain-language docs, proof explanations, and `/admin/toh` interface | Implemented locally | Authenticated runtime verification still requires an active admin session |
 | Phase 32 autonomy budget | Authority and protected-domain control plane | Implemented locally | Owner has not approved higher levels |
 | Phase 33 two-key protection | Protected mutations cannot pass Level 0 | Partial | No production approval ledger or second human key |
 | Phase 34 kill switch | `writeActionsFrozen: true` enforced by TOH gate and no write commands exist | Implemented | Tests verify protected writes cannot pass |
@@ -54,7 +54,7 @@ The local read-only TOH foundation is implemented and tested. A full production 
 1. Completed and owner-confirmed blueprint.
 2. Authoritative live Supabase schema/RLS/RPC evidence.
 3. Vercel project/deployment identity and staging environment.
-4. An approved LLM provider, model, credential policy, budget, and tool permissions.
+4. A server-only `OPENAI_API_KEY` in local/Vercel environment and an owner-controlled usage budget.
 5. Approved production schema for workflow state, idempotency, incidents, invariants, audit, and approvals.
 6. Isolated synthetic test users and a staging environment.
 7. Monitoring/alert destination and incident ownership.

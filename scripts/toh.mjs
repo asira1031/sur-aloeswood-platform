@@ -209,7 +209,11 @@ function capabilityAudit() {
       capability("bounded RLS database read", "IMPLEMENTED", "allowlisted buddy_ resources"),
       capability("local proof commands", "IMPLEMENTED", "lint/build verifier and proof limits"),
       capability("owner blueprint", "BLOCKED_BY_OWNER_TRUTH", "authoritative product/business/security decisions missing"),
-      capability("LLM runtime", "NOT_IMPLEMENTED", "no model provider configured"),
+      capability(
+        "LLM runtime",
+        process.env.OPENAI_API_KEY ? "CONFIGURED" : "IMPLEMENTED_CONFIGURATION_REQUIRED",
+        "/admin/toh and /api/toh/chat use the OpenAI Responses API without tools; requires server-only OPENAI_API_KEY",
+      ),
       capability("live monitoring and reconciliation", "NOT_IMPLEMENTED", "no authorized health views or scheduler"),
       capability("safe execution", "FROZEN", "authority level 0"),
       capability("autonomous repair", "FROZEN", "write kill switch"),
@@ -517,7 +521,7 @@ function statusReport() {
     authorityLabel: "OBSERVE",
     killSwitch: "WRITE_ACTIONS_FROZEN",
     liveMutationAvailable: false,
-    llmRuntimeAvailable: false,
+    llmRuntimeAvailable: Boolean(process.env.OPENAI_API_KEY),
     databaseGateway: {
       credentials: "anon key with RLS enforcement",
       authenticatedReaderConfigured: Boolean(readerEmail() && readerPassword()),

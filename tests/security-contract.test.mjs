@@ -48,3 +48,25 @@ test("application security headers remain configured", () => {
   assert.match(source, /process\.env\.NODE_ENV\s*===\s*["']development["']/);
   assert.match(source, /isDev\s*\?\s*["'] 'unsafe-eval'["']\s*:\s*["']["']/);
 });
+
+test("TOH chat remains authenticated, admin-only, bounded, and tool-free", () => {
+  const source = read("app/api/toh/chat/route.ts");
+  assert.match(source, /bearerToken\s*\(/);
+  assert.match(source, /auth\.getUser\s*\(/);
+  assert.match(source, /ADMIN/);
+  assert.match(source, /SUPER_ADMIN/);
+  assert.match(source, /enforceRateLimit\([^,]+,\s*["']toh-chat["'],\s*20/);
+  assert.match(source, /question\.length\s*>\s*4_000/);
+  assert.match(source, /store:\s*false/);
+  assert.match(source, /deterministicTohAnswer/);
+  assert.doesNotMatch(source, /tools\s*:/);
+  assert.doesNotMatch(source, /SUPABASE_SERVICE_ROLE/);
+  assert.doesNotMatch(source, /\.insert\s*\(|\.update\s*\(|\.upsert\s*\(|\.delete\s*\(|\.rpc\s*\(/);
+});
+
+test("TOH page sends the current admin session token without exposing an API key", () => {
+  const source = read("app/admin/toh/page.tsx");
+  assert.match(source, /getSession\s*\(/);
+  assert.match(source, /Authorization:\s*`Bearer \$\{token\}`/);
+  assert.doesNotMatch(source, /OPENAI_API_KEY/);
+});

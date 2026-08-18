@@ -14,12 +14,14 @@
 - TOH and application security contract tests
 - Local lint/build verification with explicit proof limits
 - GitHub CI definition for TOH tests, lint, production build, and dependency audit (activates only after owner push)
+- Admin-only `/admin/toh` teacher/diagnosis page with deterministic no-key mode
+- OpenAI Responses API integration with response storage disabled and no tools or mutation authority
 
 ## Final verified results
 
-- TOH/security tests: 18 passed, 0 failed
+- TOH/security tests: 20 passed, 0 failed
 - ESLint: 0 errors, 161 warnings
-- Next.js production build: passed; 66 routes generated
+- Next.js production build: passed; 68 routes generated, including `/admin/toh` and `/api/toh/chat`
 - npm audit: 0 vulnerabilities
 - Read-only Supabase test: succeeded against `buddy_app_overview` with one bounded row
 - Isolated local browser smoke test: passed on `http://localhost:3002`
@@ -27,10 +29,10 @@
 - Unauthenticated admin, farmer, and investor dashboards correctly redirected to login with return paths
 - Clean Direk Tony browser tab after the development CSP fix: 0 console errors/warnings
 - Port identity confirmed: 3000 is `agarwood-platform`, 3001 is `rejected sur app`, and 3002 is `direk tony`
-- GitHub remote `master` matches committed local HEAD: `597f1c42d3a05c3b82b23ddd84309f2259fc368f`
+- GitHub remote `master` remains on the older production commit `597f1c42d3a05c3b82b23ddd84309f2259fc368f`
 - Production homepage: `https://sur-aloeswood-platform.vercel.app`
 - Latest GitHub Production deployment for that commit: success; public page rendered with 0 console errors/warnings
-- Current uncommitted TOH/security changes are not deployed
+- Current local TOH work is not pushed or deployed
 - Live mutations performed by TOH: none
 - Environment secret values printed or committed by TOH: none
 
@@ -53,7 +55,7 @@ npm.cmd run toh -- proof
 1. Complete and confirm `TOH_OWNER_BLUEPRINT.md`.
 2. Supply authorized read-only evidence for the nine RPC definitions absent from the repository and the live RLS/schema state.
 3. Confirm the Vercel production project, URL, deployed commit, and staging environment.
-4. Decide whether an actual LLM runtime is wanted; approve provider, model, cost, credential storage, data boundary, and tool permissions.
+4. Add `OPENAI_API_KEY` as a server-only local/Vercel environment value and maintain the owner-approved usage budget. Never commit or paste the key into chat.
 5. Approve any proposed production schema for workflow state, idempotency, invariants, incidents, approvals, or monitoring.
 
 Until those gates are satisfied, `writeActionsFrozen` remains `true` and TOH correctly refuses to claim production completeness.

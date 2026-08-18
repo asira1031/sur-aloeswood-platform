@@ -97,10 +97,10 @@ test("health reports owner blueprint and dirty-worktree attention honestly", () 
   assert.equal(output.checks.find((check) => check.id === "owner-blueprint")?.passed, false);
 });
 
-test("capability audit does not pretend an LLM or autonomous repair exists", () => {
+test("capability audit reports TOH configuration honestly and keeps autonomous repair frozen", () => {
   const output = json(run("audit"));
   const statuses = Object.fromEntries(output.capabilities.map((item) => [item.name, item.status]));
-  assert.equal(statuses["LLM runtime"], "NOT_IMPLEMENTED");
+  assert.equal(statuses["LLM runtime"], "IMPLEMENTED_CONFIGURATION_REQUIRED");
   assert.equal(statuses["autonomous repair"], "FROZEN");
   assert.equal(statuses["production proof of done"], "NOT_PROVEN");
 });

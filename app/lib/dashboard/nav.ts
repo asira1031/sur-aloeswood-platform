@@ -41,6 +41,7 @@ export function byDateDesc(a: AnyRow, b: AnyRow) {
 }
 
 export const adminLinks = [
+  { href: "/admin/toh", title: "TOH Intelligence", desc: "Read-only app diagnosis and verified technical guidance" },
   { href: "/admin/coplanters", title: "Co-Planters", desc: "Approve accounts and KYC" },
   { href: "/admin/purchases", title: "Seedling Purchases", desc: "Approve payments and generate AG codes" },
   { href: "/admin/tree-registry", title: "Tree Registry", desc: "DENR tags, GPS, planting details" },
