@@ -35,8 +35,9 @@ test("map is derived from this repository and records proof gaps", () => {
   const output = json(run("map"));
   assert.match(output.source.repository, /sur-aloeswood-platform/);
   assert.ok(output.frontend.pages.includes("/investor/wallet"));
-  assert.ok(output.backend.apiRoutes.includes("/api/investor/buy-seedling"));
-  assert.ok(output.backend.rpcReferences.includes("purchase_seedling_with_wallet"));
+  assert.ok(output.frontend.pages.includes("/investor/marketplace"));
+  assert.ok(output.backend.rpcReferences.includes("sur_submit_tree_order"));
+  assert.ok(output.backend.rpcReferences.includes("sur_admin_approve_tree_order"));
   assert.equal(output.operations.automatedTests, "PRESENT BUT UNVERIFIED");
   assert.equal(output.database.liveSchema, "UNKNOWN");
 });
@@ -84,7 +85,7 @@ test("refresh persists a regeneratable local model without touching live systems
 test("local reconciliation reports missing RPC source instead of assuming live truth", () => {
   const output = json(run("reconcile"));
   assert.equal(output.decision, "HOLD");
-  assert.ok(output.rpcAlignment.some((item) => item.rpc === "purchase_seedling_with_wallet"));
+  assert.ok(output.rpcAlignment.some((item) => item.rpc === "sur_submit_tree_order"));
   assert.ok(output.findings.every((finding) => finding.severity === "HIGH"));
   assert.equal(output.proofLimit.includes("live Supabase"), true);
 });
