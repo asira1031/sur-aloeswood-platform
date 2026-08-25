@@ -20,12 +20,12 @@ export default function Home() {
     <main className="min-h-screen bg-[#f7f5ef] text-[#173329]">
       <header className="border-b border-[#173329]/10 bg-[#f7f5ef]/95">
         <nav className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 sm:px-8 lg:px-12">
-          <Link href="/" className="group flex min-w-0 items-center gap-3" aria-label="SUR Aloeswood home">
-            <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full bg-white shadow-[0_6px_18px_rgba(23,51,41,.14)] ring-1 ring-[#d9ad60]/35 transition duration-300 group-hover:-translate-y-0.5 sm:h-14 sm:w-14" aria-hidden="true">
-              <Image src="/sur-logo.png" alt="" width={190} height={220} priority className="absolute left-1/2 top-[-1px] h-auto w-[58px] max-w-none -translate-x-1/2 sm:w-[67px]" />
+          <Link href="/" className="group flex min-w-0 items-center gap-3.5" aria-label="SUR Aloeswood home">
+            <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-2xl bg-white shadow-[0_7px_20px_rgba(23,51,41,.12)] ring-1 ring-[#d9ad60]/30 transition duration-300 group-hover:-translate-y-0.5 sm:h-16 sm:w-16" aria-hidden="true">
+              <Image src="/sur-logo.png" alt="" width={190} height={220} priority className="absolute left-1/2 top-[-1px] h-auto w-[75px] max-w-none -translate-x-1/2 sm:w-[86px]" />
             </span>
             <span>
-              <span className="block whitespace-nowrap text-[15px] font-black tracking-[0.11em] sm:text-base">SUR ALOESWOOD</span>
+              <span className="block whitespace-nowrap text-[15px] font-black tracking-[0.11em] sm:text-[17px]">SUR ALOESWOOD</span>
               <span className="block whitespace-nowrap text-[9px] font-bold tracking-[0.08em] text-[#6a786f] sm:text-[10px]">TREE OWNERSHIP & CARE</span>
             </span>
           </Link>
