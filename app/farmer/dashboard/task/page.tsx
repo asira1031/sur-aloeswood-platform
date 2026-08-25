@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase } from "@/app/lib/supabase/client";
 
@@ -446,7 +447,7 @@ export default function FarmerTaskPage() {
         <Panel title={queueTitle(queue)} subtitle="Select one AG tree task to view its current state.">
           <div className="space-y-3">
             {visibleTasks.length === 0 ? (
-              <Empty text={emptyText(queue)} />
+              <Empty asset="/app-assets/empty-caretaker-tasks-v1.png" text={emptyText(queue)} />
             ) : (
               visibleTasks.map((task) => (
                 <button key={task.task_key} onClick={() => setSelectedKey(task.task_key)} className={`w-full rounded-2xl border p-5 text-left transition ${selected?.task_key === task.task_key ? "border-emerald-400 bg-emerald-50 ring-2 ring-emerald-100" : "border-slate-200 bg-slate-50 hover:border-emerald-200"}`}>
@@ -737,9 +738,10 @@ function FileInput({ label, file, onChange }: { label: string; file: File | null
   );
 }
 
-function Empty({ text }: { text: string }) {
+function Empty({ text, asset }: { text: string; asset?: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm font-bold text-slate-500">
+    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm font-bold text-slate-500">
+      {asset && <Image src={asset} alt="" width={160} height={160} className="mx-auto mb-3 h-28 w-28 object-contain sm:h-36 sm:w-36" />}
       {text}
     </div>
   );

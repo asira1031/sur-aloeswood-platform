@@ -97,7 +97,9 @@ export default function LoginPage() {
 
     const accountStatus = String(profile.account_status || "PENDING").toUpperCase();
 
-    if (["PENDING", "UNDER_REVIEW"].includes(accountStatus)) {
+    const normalizedRole = String(profile.role || "").toUpperCase().replace("CO_PLANTER", "COPLANTER");
+
+    if (["PENDING", "UNDER_REVIEW"].includes(accountStatus) && !["COPLANTER", "INVESTOR"].includes(normalizedRole)) {
       await supabase.auth.signOut();
       clearSurSession();
       setMessage("Your account is pending admin approval. Please login again after review.");
@@ -373,8 +375,8 @@ export default function LoginPage() {
             )}
           </form>
 
-          <div className="mt-6 flex items-center justify-between text-sm font-semibold">
-            <Link href="/register" className="text-green-700 hover:underline">
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-2 text-sm font-semibold">
+            <Link href="/register" className="inline-flex min-h-11 items-center rounded-xl px-3 text-green-700 hover:bg-green-50">
               Create account
             </Link>
             <button
@@ -385,7 +387,7 @@ export default function LoginPage() {
                 setMessage("");
               }}
               disabled={resettingPassword}
-              className="text-slate-500 hover:underline disabled:opacity-60"
+              className="inline-flex min-h-11 items-center rounded-xl px-3 text-slate-500 hover:bg-slate-50 disabled:opacity-60"
             >
               {resetMode ? "Back to login" : "Forgot password?"}
             </button>

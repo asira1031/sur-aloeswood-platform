@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/app/lib/supabase/client";
@@ -513,7 +514,7 @@ export default function CareServicesPage() {
                     <p className="mt-1 text-xs font-bold text-slate-500">Tree photos, tag close-ups, visible serials, and admin review status.</p>
                     <div className="mt-3 grid gap-3">
                       {selectedLogs.length === 0 ? (
-                        <Empty text="No caretaker submissions yet for this tree." />
+                        <Empty asset="/app-assets/empty-care-updates-v1.png" text="No caretaker submissions yet for this tree." />
                       ) : selectedLogs.map((log) => (
                         <div key={log.id} className="overflow-hidden rounded-2xl border border-white bg-white">
                           {log.photo_url && (
@@ -592,9 +593,10 @@ function Info({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Empty({ text }: { text: string }) {
+function Empty({ text, asset }: { text: string; asset?: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm font-bold text-slate-500">
+    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm font-bold text-slate-500">
+      {asset && <Image src={asset} alt="" width={160} height={160} className="mx-auto mb-3 h-28 w-28 object-contain sm:h-36 sm:w-36" />}
       {text}
     </div>
   );

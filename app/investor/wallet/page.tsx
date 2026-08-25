@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { ChangeEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { calculatePlatformFee } from "@/app/lib/finance/fee-distribution";
 import { supabase } from "@/app/lib/supabase/client";
@@ -522,7 +523,7 @@ export default function InvestorWalletPage() {
           <h2 className="text-2xl font-black text-slate-950">Transaction History</h2>
           <div className="mt-5 grid gap-3">
             {transactions.length === 0 ? (
-              <Empty text="No wallet activity yet." />
+              <Empty asset="/app-assets/empty-wallet-v1.png" text="No wallet activity yet." />
             ) : (
               transactions.map((transaction) => (
                 <HistoryCard key={transaction.id} title={transaction.transaction_type || "Wallet transaction"} amount={peso(transaction.amount)} status={transaction.status || "COMPLETED"} date={transaction.created_at} description={transaction.description || "-"} />
@@ -612,6 +613,6 @@ function HistoryCard({ title, amount, status, date, description, proofUrl }: { t
   );
 }
 
-function Empty({ text }: { text: string }) {
-  return <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 p-5 text-sm font-bold text-slate-500">{text}</div>;
+function Empty({ text, asset }: { text: string; asset?: string }) {
+  return <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 p-5 text-center text-sm font-bold text-slate-500">{asset && <Image src={asset} alt="" width={160} height={160} className="mx-auto mb-3 h-28 w-28 object-contain sm:h-36 sm:w-36" />} {text}</div>;
 }

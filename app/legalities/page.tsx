@@ -161,7 +161,7 @@ export default function LegalitiesPage() {
                 <button
                   key={item}
                   onClick={() => setGroup(item)}
-                  className={`rounded-full border px-4 py-2 text-xs font-black ${
+                  className={`min-h-11 rounded-full border px-4 py-2 text-xs font-black ${
                     group === item ? "border-emerald-500 bg-emerald-600 text-white" : "border-emerald-100 bg-emerald-50 text-emerald-900"
                   }`}
                 >

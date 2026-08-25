@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { getAuthenticatedProfile, type SurProfile } from "@/app/lib/auth/session";
 import { supabase } from "@/app/lib/supabase/client";
@@ -192,7 +193,7 @@ export default function MyAgarwoodPage() {
 
             <div className="mt-5 space-y-3">
               {trees.length === 0 && !loading ? (
-                <Empty text="No approved Tree ID yet. You may continue browsing while an order is being verified." />
+                <Empty asset="/app-assets/empty-my-trees-v1.png" text="No approved Tree ID yet. You may continue browsing while an order is being verified." />
               ) : (
                 trees.map((tree) => (
                   <button
@@ -424,6 +425,11 @@ function groupUpdates(rows: Row[], period: "WEEKLY" | "MONTHLY") {
     .sort((a, b) => b.time - a.time);
 }
 
-function Empty({ text }: { text: string }) {
-  return <p className="rounded-2xl border border-dashed border-white/15 bg-black/15 p-5 text-sm font-bold text-white/50">{text}</p>;
+function Empty({ text, asset }: { text: string; asset?: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-white/15 bg-black/15 p-5 text-center text-sm font-bold text-white/50">
+      {asset && <Image src={asset} alt="" width={180} height={180} className="mx-auto mb-3 h-32 w-32 object-contain sm:h-36 sm:w-36" />}
+      <p>{text}</p>
+    </div>
+  );
 }

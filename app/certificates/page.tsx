@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
 import {
@@ -110,7 +111,7 @@ export default function CertificatesPage() {
           <h2 className="text-3xl font-black">Registered Trees</h2>
           <div className="mt-6 space-y-3">
             {trees.length === 0 ? (
-              <Empty text="No AG trees yet." />
+              <Empty asset="/app-assets/empty-documents-v1.png" text="No tree documents yet. Your verified contracts and certificates will appear here." />
             ) : trees.map((tree) => (
               <button
                 key={tree.id}
@@ -185,6 +186,11 @@ function CertInfo({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Empty({ text }: { text: string }) {
-  return <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm font-bold text-white/60">{text}</div>;
+function Empty({ text, asset }: { text: string; asset?: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-center text-sm font-bold text-white/60">
+      {asset && <Image src={asset} alt="" width={180} height={180} className="mx-auto mb-3 h-32 w-32 object-contain sm:h-36 sm:w-36" />}
+      <p>{text}</p>
+    </div>
+  );
 }

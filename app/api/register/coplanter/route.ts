@@ -83,7 +83,9 @@ export async function POST(request: NextRequest) {
     const { data: authCreateData, error: authCreateError } = await admin.auth.admin.createUser({
       email,
       password,
-      email_confirm: false,
+      // Product decision: co-planters sign in immediately after registration.
+      // Business approval remains enforced separately through account_status.
+      email_confirm: true,
       user_metadata: {
         full_name: fullName,
         role: "COPLANTER",
@@ -141,6 +143,6 @@ export async function POST(request: NextRequest) {
     ok: true,
     profile,
     referralCode,
-    message: "Registration received. Confirm your email and wait for account approval.",
+    message: "Registration complete. Your account is signed in and pending admin approval.",
   });
 }

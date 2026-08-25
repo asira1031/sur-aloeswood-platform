@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
 import { formatDate, statusClass, type AnyRow } from "@/app/lib/settings/preferences";
@@ -305,7 +306,7 @@ export default function InvestorSupportPage() {
 
               <div className="mt-5 h-[460px] overflow-y-auto rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
                 {selectedMessages.length === 0 ? (
-                  <Empty text="Start a conversation. Ask about wallet, trees, certificates, orders, account access, or admin help." />
+                  <Empty asset="/app-assets/empty-support-v1.png" text="Start a conversation. Ask about wallet, trees, certificates, orders, account access, or admin help." />
                 ) : (
                   <div className="space-y-3">
                     {selectedMessages.map((item) => (
@@ -351,7 +352,7 @@ export default function InvestorSupportPage() {
             <section className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
               <h2 className="text-2xl font-black text-slate-950">Tickets</h2>
               <div className="mt-5 grid gap-3">
-                {tickets.length === 0 ? <Empty text="No official support tickets yet." /> : tickets.map((ticket) => <TicketCard key={ticket.id} ticket={ticket} />)}
+                {tickets.length === 0 ? <Empty asset="/app-assets/empty-support-v1.png" text="No official support tickets yet." /> : tickets.map((ticket) => <TicketCard key={ticket.id} ticket={ticket} />)}
               </div>
             </section>
           )}
@@ -361,7 +362,7 @@ export default function InvestorSupportPage() {
               <h2 className="text-2xl font-black text-slate-950">History</h2>
               <div className="mt-5 grid gap-3">
                 {chats.length === 0 ? (
-                  <Empty text="No chat history yet." />
+                  <Empty asset="/app-assets/empty-support-v1.png" text="No chat history yet." />
                 ) : (
                   chats.map((chat) => (
                     <button key={chat.id} onClick={() => { setSelectedChatId(chat.id); setTab("CHAT"); }} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left hover:border-emerald-200 hover:bg-emerald-50/70">
@@ -454,6 +455,11 @@ function TicketCard({ ticket }: { ticket: AnyRow }) {
   );
 }
 
-function Empty({ text }: { text: string }) {
-  return <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 p-5 text-sm font-bold text-slate-500">{text}</div>;
+function Empty({ text, asset }: { text: string; asset?: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 p-5 text-center text-sm font-bold text-slate-500">
+      {asset && <Image src={asset} alt="" width={180} height={180} className="mx-auto mb-3 h-28 w-28 object-contain sm:h-32 sm:w-32" />}
+      <p>{text}</p>
+    </div>
+  );
 }

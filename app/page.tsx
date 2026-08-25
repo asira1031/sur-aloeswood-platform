@@ -1,6 +1,5 @@
 import Link from "next/link";
 import Image from "next/image";
-import InstallAppButton from "@/app/components/InstallAppButton";
 
 const steps = [
   ["01", "Choose your tree", "Purchase one agarwood tree and select the care coverage that works for you."],
@@ -17,22 +16,24 @@ const trustItems = [
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-[#f7f5ef] text-[#173329]">
-      <header className="border-b border-[#173329]/10 bg-[#f7f5ef]/95">
-        <nav className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 sm:px-8 lg:px-12">
-          <Link href="/" className="group flex min-w-0 items-center gap-3.5" aria-label="SUR Aloeswood home">
-            <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-2xl bg-white shadow-[0_7px_20px_rgba(23,51,41,.12)] ring-1 ring-[#d9ad60]/30 transition duration-300 group-hover:-translate-y-0.5 sm:h-16 sm:w-16" aria-hidden="true">
-              <Image src="/sur-logo.png" alt="" width={190} height={220} priority className="absolute left-1/2 top-[-1px] h-auto w-[75px] max-w-none -translate-x-1/2 sm:w-[86px]" />
+    <main className="min-h-screen bg-[#f7f5ef] pb-20 text-[#173329] sm:pb-0">
+      <header className="sticky top-0 z-50 border-b border-[#173329]/10 bg-[#f7f5ef]/95 backdrop-blur-xl">
+        <nav className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-8 sm:py-4 lg:px-12">
+          <Link href="/" className="group flex min-w-0 items-center gap-2.5 sm:gap-3.5" aria-label="SUR Aloeswood home">
+            <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-white shadow-[0_7px_20px_rgba(23,51,41,.12)] ring-1 ring-[#d9ad60]/30 transition duration-300 group-hover:-translate-y-0.5 sm:h-16 sm:w-16 sm:rounded-2xl" aria-hidden="true">
+              <Image src="/sur-logo.png" alt="" width={190} height={220} priority className="absolute left-1/2 top-[-1px] h-auto w-[59px] max-w-none -translate-x-1/2 sm:w-[86px]" />
             </span>
-            <span>
-              <span className="block whitespace-nowrap text-[15px] font-black tracking-[0.11em] sm:text-[17px]">SUR ALOESWOOD</span>
-              <span className="block whitespace-nowrap text-[9px] font-bold tracking-[0.08em] text-[#6a786f] sm:text-[10px]">TREE OWNERSHIP & CARE</span>
+            <span className="min-w-0">
+              <span className="block whitespace-nowrap text-[13px] font-black tracking-[0.08em] min-[360px]:text-[14px] sm:text-[17px] sm:tracking-[0.11em]">SUR ALOESWOOD</span>
+              <span className="hidden whitespace-nowrap text-[8px] font-bold tracking-[0.06em] text-[#6a786f] min-[360px]:block sm:text-[10px] sm:tracking-[0.08em]">TREE OWNERSHIP & CARE</span>
             </span>
           </Link>
-          <div className="flex items-center gap-2">
-            <Link href="/tree" className="hidden px-4 py-2 text-sm font-bold text-[#294c3e] sm:block">Verify a tree</Link>
-            <Link href="/login" className="rounded-full border border-[#173329]/20 px-4 py-2.5 text-sm font-bold">Log in</Link>
-            <Link href="/register" className="rounded-full bg-[#173329] px-4 py-2.5 text-sm font-bold text-white">Get started</Link>
+          <Link href="/register" className="flex min-h-11 shrink-0 items-center justify-center rounded-full bg-[#173329] px-4 text-sm font-black text-white sm:hidden">Join</Link>
+          <div className="hidden items-center gap-2 sm:flex">
+            <Link href="#how-it-works" className="hidden min-h-11 items-center px-3 text-sm font-bold text-[#294c3e] lg:flex">How it works</Link>
+            <Link href="/tree" className="hidden min-h-11 items-center px-3 text-sm font-bold text-[#294c3e] md:flex">Verify a tree</Link>
+            <Link href="/login" className="flex min-h-11 flex-1 items-center justify-center rounded-full border border-[#173329]/20 bg-white px-4 text-sm font-bold sm:flex-none">Log in</Link>
+            <Link href="/register" className="flex min-h-11 flex-1 items-center justify-center rounded-full bg-[#173329] px-4 text-sm font-bold text-white sm:flex-none">Get started</Link>
           </div>
         </nav>
       </header>
@@ -103,8 +104,29 @@ export default function Home() {
       </section>
 
       <footer className="border-t border-[#173329]/10 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-5 py-8 text-sm text-[#5d6e64] sm:px-8 md:flex-row md:items-center md:justify-between lg:px-12"><p>© 2026 SUR Aloeswood. Tree ownership and care records.</p><div className="flex flex-wrap items-center gap-5 font-bold"><Link href="/legalities">Legal library</Link><Link href="/tree">Verify tree</Link><Link href="/login">Customer login</Link><InstallAppButton /></div></div>
+        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-5 py-8 text-sm text-[#5d6e64] sm:px-8 md:flex-row md:items-center md:justify-between lg:px-12"><p>© 2026 SUR Aloeswood. Tree ownership and care records.</p><div className="flex flex-wrap items-center gap-2 font-bold sm:gap-3"><Link href="/legalities" className="inline-flex min-h-11 items-center rounded-full px-3">Legal library</Link><Link href="/tree" className="inline-flex min-h-11 items-center rounded-full px-3">Verify tree</Link><Link href="/login" className="inline-flex min-h-11 items-center rounded-full px-3">Customer login</Link></div></div>
       </footer>
+
+      <nav aria-label="Mobile app navigation" className="fixed inset-x-0 bottom-0 z-50 border-t border-[#173329]/10 bg-white/95 px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_30px_rgba(23,51,41,.08)] backdrop-blur-xl sm:hidden">
+        <div className="mx-auto grid max-w-md grid-cols-4">
+          <Link href="/" className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl bg-[#e8eee5] text-[11px] font-black text-[#173329]">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+            Home
+          </Link>
+          <Link href="/tree" className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl text-[11px] font-bold text-[#627168]">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22V8"/><path d="M12 13c-5 0-8-3-8-8 5 0 8 3 8 8Z"/><path d="M12 10c0-4 3-7 7-7 0 4-3 7-7 7Z"/></svg>
+            Verify
+          </Link>
+          <Link href="/login" className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl text-[11px] font-bold text-[#627168]">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+            Log in
+          </Link>
+          <Link href="/register" className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl text-[11px] font-bold text-[#627168]">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>
+            Join
+          </Link>
+        </div>
+      </nav>
     </main>
   );
 }

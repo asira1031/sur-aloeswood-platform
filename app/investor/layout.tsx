@@ -10,7 +10,7 @@ function normalizeRole(role?: string | null) {
 }
 
 function isBlocked(status?: string | null) {
-  return ["PENDING", "UNDER_REVIEW", "SUSPENDED", "BLOCKED", "REJECTED", "ARCHIVED"].includes(
+  return ["SUSPENDED", "BLOCKED", "REJECTED", "ARCHIVED"].includes(
     String(status || "PENDING").toUpperCase()
   );
 }

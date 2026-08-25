@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
 import { findProfile, formatDate, profileName, statusClass, type AnyRow } from "@/app/lib/admin/activity";
@@ -257,7 +258,7 @@ export default function AdminNotificationsPage() {
 
           <div className="mt-6 grid gap-3">
             {listItems.length === 0 ? (
-              <Empty text="No request cards found." />
+              <Empty asset="/app-assets/empty-admin-review-v1.png" text="No request cards found." />
             ) : (
               listItems.map((item) => {
                 const unread = item.notices.filter((notice) => !notice.is_read).length;
@@ -316,9 +317,10 @@ function HeroStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Empty({ text }: { text: string }) {
+function Empty({ text, asset }: { text: string; asset?: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm font-bold text-slate-500">
+    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm font-bold text-slate-500">
+      {asset && <Image src={asset} alt="" width={160} height={160} className="mx-auto mb-3 h-28 w-28 object-contain sm:h-36 sm:w-36" />}
       {text}
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
 import { COPLANTER_PACKAGE_PRICE, MONTHLY_TREE_CARE_FEE, ONE_TIME_TREE_CARE_FEE, peso } from "@/app/lib/business/rules";
@@ -63,4 +64,4 @@ export default function TreeCheckout(){
 
 function Card({title,children}:{title:string;children:React.ReactNode}){return <section className="min-w-0 rounded-[1.75rem] border border-emerald-100 bg-white p-4 shadow-sm sm:p-5 md:p-6"><h2 className="mb-5 text-xl font-black sm:text-2xl">{title}</h2>{children}</section>}
 function PlanCard({title,price,text}:{title:string;price:string;text:string}){return <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4"><p className="font-black">{title}</p><p className="mt-2 text-2xl font-black text-emerald-700">{price}</p><p className="mt-2 text-sm leading-6 text-slate-600">{text}</p></div>}
-function Empty(){return <div className="rounded-2xl border border-dashed p-6 text-sm font-bold text-slate-500">Your cart is empty. Add a tree to begin.</div>}
+function Empty(){return <div className="rounded-2xl border border-dashed p-6 text-center text-sm font-bold text-slate-500"><Image src="/app-assets/empty-marketplace-v1.png" alt="" width={160} height={160} className="mx-auto mb-3 h-28 w-28 object-contain sm:h-36 sm:w-36" />Your cart is empty. Add a tree to begin.</div>}

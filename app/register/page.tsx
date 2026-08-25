@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/app/lib/supabase/client";
+import { saveSurSession } from "@/app/lib/auth/session";
 
 function makeReferralCode(fullName: string) {
   const base = fullName
@@ -13,6 +16,7 @@ function makeReferralCode(fullName: string) {
 }
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [step, setStep] = useState<"FORM" | "DONE">("FORM");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -61,15 +65,31 @@ export default function RegisterPage() {
     });
 
     const result = await response.json().catch(() => null);
-    setLoading(false);
-
     if (!response.ok) {
+      setLoading(false);
       setMessage(result?.error || "Unable to create account.");
       return;
     }
 
-    setStep("DONE");
-    setMessage(`Your account is ready. Referral code: ${result?.referralCode || referralCode}.`);
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password,
+    });
+
+    if (signInError || !signInData.user || !result?.profile) {
+      setLoading(false);
+      setStep("DONE");
+      setMessage("Account created, but automatic login failed. Please use the login page.");
+      return;
+    }
+
+    saveSurSession({
+      ...result.profile,
+      role: "COPLANTER",
+      account_status: "PENDING",
+    });
+    setMessage(`Account ready. Referral code: ${result?.referralCode || referralCode}. Opening your dashboard...`);
+    router.replace("/investor/dashboard");
   }
 
   return (
@@ -163,9 +183,9 @@ export default function RegisterPage() {
             </div>
           )}
 
-          <p className="mt-6 text-sm font-medium text-slate-500">
+          <p className="mt-6 flex flex-wrap items-center gap-1 text-sm font-medium text-slate-500">
             Already have an account?{" "}
-            <Link href="/login" className="font-black text-emerald-700">
+            <Link href="/login" className="inline-flex min-h-11 items-center rounded-xl px-3 font-black text-emerald-700 hover:bg-emerald-50">
               Login here
             </Link>
           </p>
