@@ -15,8 +15,8 @@ export function dashboardForRole(role?: string | null) {
   const normalized = normalizeRole(role);
 
   if (normalized === "ADMIN") return "/admin/dashboard";
-  if (normalized === "FARMER" || normalized === "GARDENER") return "/farmer/dashboard";
-  if (normalized === "COPLANTER" || normalized === "INVESTOR") return "/investor/dashboard";
+  if (normalized === "FARMER" || normalized === "GARDENER") return "/farmer/daily-care";
+  if (normalized === "COPLANTER" || normalized === "INVESTOR") return "/investor/my-trees";
 
   return "/login";
 }

@@ -4,10 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/app/lib/supabase/client";
 import { clearSurSession, getRoleRoute, saveSurSession } from "@/app/lib/auth/session";
-
-function normalizeRole(role?: string | null) {
-  return String(role || "").toUpperCase().replace("CO_PLANTER", "COPLANTER");
-}
+import AccountModeSwitcher from "@/app/components/AccountModeSwitcher";
 
 export default function FarmerLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -48,16 +45,22 @@ export default function FarmerLayout({ children }: { children: ReactNode }) {
         return;
       }
 
-      const role = normalizeRole(profile.role);
       const status = String(profile.account_status || "PENDING").toUpperCase();
 
-      if (!["FARMER", "GARDENER", "CARETAKER"].includes(role)) {
+      const { data: caretakerAccess, error: caretakerError } = await supabase
+        .from("gardeners")
+        .select("id,status")
+        .eq("email", email)
+        .maybeSingle();
+      const caretakerStatus = String(caretakerAccess?.status || "PENDING").toUpperCase();
+
+      if (caretakerError || !caretakerAccess) {
         saveSurSession(profile);
         router.replace(getRoleRoute(profile.role));
         return;
       }
 
-      if (["PENDING", "UNDER_REVIEW", "SUSPENDED", "BLOCKED", "REJECTED"].includes(status)) {
+      if (["PENDING", "UNDER_REVIEW", "SUSPENDED", "BLOCKED", "REJECTED"].includes(status) || !["ACTIVE", "APPROVED"].includes(caretakerStatus)) {
         clearSurSession();
         router.replace("/unauthorized");
         return;
@@ -90,5 +93,5 @@ export default function FarmerLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return <><AccountModeSwitcher mode="CARETAKER" />{children}</>;
 }

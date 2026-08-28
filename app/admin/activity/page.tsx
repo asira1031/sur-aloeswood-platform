@@ -27,7 +27,7 @@ type EvidenceItem = {
 
 const categories = [
   { key: "ALL", title: "All Evidence", detail: "Complete operational audit trail." },
-  { key: "CUSTOMER", title: "Customer", detail: "Cash-in, withdrawal, support, purchase, requests, and selling activity." },
+  { key: "CUSTOMER", title: "Customer", detail: "Withdrawal, support, purchase, requests, and selling activity." },
   { key: "CARETAKER", title: "Caretaker", detail: "Assigned work, submitted proof, completed task, and field updates." },
   { key: "TREE", title: "Tree Registry", detail: "AG code, registry, DENR, GPS, planting, and certificate movement." },
   { key: "FINANCE", title: "Finance", detail: "Wallet movement, revenue allocation, settlement, fees, and payouts." },
@@ -39,7 +39,6 @@ export default function AdminActivityPage() {
   const [tickets, setTickets] = useState<AnyRow[]>([]);
   const [walletTx, setWalletTx] = useState<AnyRow[]>([]);
   const [purchases, setPurchases] = useState<AnyRow[]>([]);
-  const [cashins, setCashins] = useState<AnyRow[]>([]);
   const [withdrawals, setWithdrawals] = useState<AnyRow[]>([]);
   const [notifications, setNotifications] = useState<AnyRow[]>([]);
   const [orders, setOrders] = useState<AnyRow[]>([]);
@@ -73,7 +72,6 @@ export default function AdminActivityPage() {
       ticketResult,
       walletResult,
       purchaseResult,
-      cashinResult,
       withdrawalResult,
       notificationResult,
       orderResult,
@@ -109,14 +107,6 @@ export default function AdminActivityPage() {
         "seedling_purchases",
         supabase
           .from("seedling_purchases")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(500)
-      ),
-      safeLoad(
-        "cashin_requests",
-        supabase
-          .from("cashin_requests")
           .select("*")
           .order("created_at", { ascending: false })
           .limit(500)
@@ -183,7 +173,6 @@ export default function AdminActivityPage() {
     setTickets(ticketResult.rows);
     setWalletTx(walletResult.rows);
     setPurchases(purchaseResult.rows);
-    setCashins(cashinResult.rows);
     setWithdrawals(withdrawalResult.rows);
     setNotifications(notificationResult.rows);
     setOrders(orderResult.rows);
@@ -198,7 +187,6 @@ export default function AdminActivityPage() {
         ticketResult.issue,
         walletResult.issue,
         purchaseResult.issue,
-        cashinResult.issue,
         withdrawalResult.issue,
         notificationResult.issue,
         orderResult.issue,
@@ -214,27 +202,6 @@ export default function AdminActivityPage() {
 
   const evidenceRows = useMemo(() => {
     const rows: EvidenceItem[] = [];
-
-    for (const row of cashins) {
-      const profile = profileFor(row.profile_id, profiles);
-      rows.push({
-        id: `cashin-${row.id}`,
-        category: "CUSTOMER",
-        action: "Cash-in",
-        title: `Cash-in ${row.status || "request"}`,
-        description: row.description || `Cash-in reference ${row.reference_no || row.id}`,
-        status: row.status || "PENDING",
-        actor: profileName(profile),
-        actorEmail: profile?.email || "",
-        amount: numberOrNull(row.amount),
-        reference: row.reference_no || row.id,
-        evidenceUrl: proofUrl(row),
-        sourceLabel: "Treasury",
-        sourceHref: "/admin/treasury",
-        createdAt: row.created_at || row.updated_at,
-        raw: row,
-      });
-    }
 
     for (const row of withdrawals) {
       const profile = profileFor(row.profile_id, profiles);
@@ -446,7 +413,7 @@ export default function AdminActivityPage() {
     }
 
     return rows.sort((a, b) => dateTime(b.createdAt) - dateTime(a.createdAt));
-  }, [allocations, assignments, cashins, growthLogs, notifications, orders, profiles, purchases, tickets, trees, walletTx, withdrawals]);
+  }, [allocations, assignments, growthLogs, notifications, orders, profiles, purchases, tickets, trees, walletTx, withdrawals]);
 
   const filtered = useMemo(() => {
     const keyword = search.toLowerCase().trim();

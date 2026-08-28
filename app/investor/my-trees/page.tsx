@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { getAuthenticatedProfile, type SurProfile } from "@/app/lib/auth/session";
 import { supabase } from "@/app/lib/supabase/client";
+import SimpleMyTrees from "@/app/components/SimpleMyTrees";
 
 type Row = Record<string, unknown>;
 
@@ -37,6 +38,10 @@ function cleanContract(value: unknown): Contract | null {
 }
 
 export default function MyAgarwoodPage() {
+  return <SimpleMyTrees />;
+}
+
+function LegacyMyAgarwoodPage() {
   const [profile, setProfile] = useState<SurProfile | null>(null);
   const [trees, setTrees] = useState<Tree[]>([]);
   const [legacyTrees, setLegacyTrees] = useState<Row[]>([]);

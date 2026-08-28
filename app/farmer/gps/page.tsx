@@ -1,2 +1,2 @@
 import { redirect } from "next/navigation";
-export default function RetiredGpsPage(){redirect("/farmer/assigned-trees");}
+export default function Page() { redirect("/farmer/daily-care"); }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { enforceRateLimit } from "@/app/lib/security/server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -10,6 +11,8 @@ function normalizeRole(role?: string | null) {
 }
 
 export async function POST(request: NextRequest) {
+  const rate = enforceRateLimit(request, "admin-farmer-create", 20, 60 * 60 * 1000);
+  if (!rate.allowed) return NextResponse.json({ error: "Too many caretaker account requests." }, { status: 429 });
   if (!supabaseUrl || !anonKey || !serviceRoleKey) {
     return NextResponse.json(
       {
@@ -48,16 +51,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: adminProfileError.message }, { status: 500 });
   }
 
-  if (!adminProfile || normalizeRole(adminProfile.role) !== "ADMIN") {
-    return NextResponse.json({ error: "Only admin accounts can register farmers." }, { status: 403 });
+  if (!adminProfile || normalizeRole(adminProfile.role) !== "ADMIN" || String(adminProfile.account_status || "").toUpperCase() !== "ACTIVE") {
+    return NextResponse.json({ error: "Only active admin accounts can register caretakers." }, { status: 403 });
   }
 
-  const body = await request.json();
-  const fullName = String(body.fullName || "").trim();
-  const email = String(body.email || "").toLowerCase().trim();
-  const mobile = String(body.mobile || "").trim();
-  const resumeUrl = String(body.resumeUrl || "").trim();
-  const status = String(body.status || "ACTIVE").toUpperCase();
+  const body = await request.json().catch(() => null);
+  const fullName = String(body?.fullName || "").trim();
+  const email = String(body?.email || "").toLowerCase().trim();
+  const mobile = String(body?.mobile || "").trim();
+  const resumeUrl = String(body?.resumeUrl || "").trim();
+  const status = String(body?.status || "ACTIVE").toUpperCase();
 
   if (!fullName || !email) {
     return NextResponse.json({ error: "Farmer name and email are required." }, { status: 400 });
@@ -66,6 +69,8 @@ export async function POST(request: NextRequest) {
   if (!resumeUrl) {
     return NextResponse.json({ error: "Resume/CV photo is required for farmer registration." }, { status: 400 });
   }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return NextResponse.json({ error: "Enter a valid caretaker email." }, { status: 400 });
+  if (!["PENDING", "ACTIVE", "APPROVED"].includes(status)) return NextResponse.json({ error: "Invalid caretaker account status." }, { status: 400 });
 
   const { data: existingProfile, error: existingProfileError } = await admin
     .from("profiles")

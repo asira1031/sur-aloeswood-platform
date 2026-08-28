@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { enforceRateLimit } from "@/app/lib/security/server";
+import { enforceDurableRateLimit } from "@/app/lib/security/server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -10,8 +10,9 @@ function normalizeRole(role?: string | null) {
 }
 
 export async function POST(request: NextRequest) {
-  const rateLimit = enforceRateLimit(request, "farmer-register", 5, 60 * 60 * 1000);
+  const rateLimit = await enforceDurableRateLimit(request, "farmer-register", 5, 60 * 60);
   if (!rateLimit.allowed) {
+    if (rateLimit.unavailable) return NextResponse.json({ error: "Registration is temporarily unavailable. Please try again later." }, { status: 503, headers: { "Retry-After": "60" } });
     return NextResponse.json(
       { error: "Too many registration attempts. Please try again later." },
       { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
@@ -25,12 +26,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const body = await request.json();
-  const fullName = String(body.fullName || "").trim();
-  const email = String(body.email || "").toLowerCase().trim();
-  const mobile = String(body.mobile || "").trim();
-  const password = String(body.password || "");
-  const resumeUrl = String(body.resumeUrl || "").trim();
+  const body = await request.json().catch(() => null);
+  const fullName = String(body?.fullName || "").trim();
+  const email = String(body?.email || "").toLowerCase().trim();
+  const mobile = String(body?.mobile || "").trim();
+  const password = String(body?.password || "");
+  const resumeUrl = String(body?.resumeUrl || "").trim();
 
   if (!fullName || !email || !password || !resumeUrl) {
     return NextResponse.json({ error: "Complete name, email, password, and resume photo." }, { status: 400 });
@@ -109,6 +110,7 @@ export async function POST(request: NextRequest) {
     : await admin.from("profiles").insert(profilePayload);
 
   if (profileSave.error) {
+    if (authUserId) await admin.auth.admin.deleteUser(authUserId);
     return NextResponse.json({ error: profileSave.error.message }, { status: 500 });
   }
 
@@ -135,6 +137,7 @@ export async function POST(request: NextRequest) {
     : await admin.from("gardeners").insert(gardenerPayload);
 
   if (gardenerSave.error) {
+    if (authUserId) await admin.auth.admin.deleteUser(authUserId);
     return NextResponse.json({ error: gardenerSave.error.message }, { status: 500 });
   }
 

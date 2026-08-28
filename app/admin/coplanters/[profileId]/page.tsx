@@ -1,5 +1,6 @@
 "use client";
 
+import PrivateKycPreview from "@/app/components/PrivateKycPreview";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -432,7 +433,7 @@ function getKycFiles(profile: AnyRow) {
   return [
     { label: "Valid ID", url: firstText(profile, ["kyc_id_url", "kyc_document_url", "valid_id_url", "id_document_url", "government_id_url"]) },
     { label: "Selfie / Photo", url: firstText(profile, ["kyc_selfie_url", "selfie_url", "kyc_photo_url", "face_photo_url"]) },
-    { label: "Extra Document", url: firstText(profile, ["kyc_extra_url", "proof_of_address_url", "supporting_document_url"]) },
+    { label: "Valid ID — Back", url: firstText(profile, ["kyc_extra_url", "proof_of_address_url", "supporting_document_url"]) },
   ].filter((file) => file.url);
 }
 
@@ -444,30 +445,7 @@ function firstText(row: AnyRow, keys: string[]) {
   return "";
 }
 
-function KycPreview({ label, url }: { label: string; url: string }) {
-  return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      {isImageUrl(url) ? (
-        <a href={url} target="_blank" rel="noreferrer">
-          <img src={url} alt={label} className="h-72 w-full object-cover" />
-        </a>
-      ) : isPdfUrl(url) ? (
-        <iframe src={url} title={label} className="h-72 w-full bg-slate-100" />
-      ) : (
-        <div className="flex h-72 items-center justify-center bg-slate-100 text-sm font-black text-slate-600">Document file</div>
-      )}
-      <div className="flex items-center justify-between gap-3 p-4">
-        <div className="min-w-0">
-          <p className="text-sm font-black text-slate-950">{label}</p>
-          <p className="mt-1 truncate text-xs font-bold text-slate-500">{url}</p>
-        </div>
-        <a href={url} target="_blank" rel="noreferrer" className="shrink-0 rounded-xl bg-slate-950 px-4 py-2 text-xs font-black text-white">
-          Open
-        </a>
-      </div>
-    </div>
-  );
-}
+function KycPreview({label,url}:{label:string;url:string}) { return <PrivateKycPreview label={label} url={url}/>; }
 
 function isImageUrl(url: string) {
   return /\.(png|jpe?g|webp|gif|bmp|avif|heic|heif)(\?|#|$)/i.test(url);

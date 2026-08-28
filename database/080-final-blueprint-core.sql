@@ -204,7 +204,7 @@ exception when unique_violation then raise exception 'This Maya reference number
 end $$;
 
 create or replace function public.sur_admin_approve_tree_order(p_order_id uuid, p_reason text)
-returns jsonb language plpgsql security definer set search_path=public as $$
+returns jsonb language plpgsql security definer set search_path=public,extensions as $$
 declare v_order public.sur_tree_orders%rowtype; v_item public.sur_tree_order_items%rowtype; i int; v_tree uuid; v_code text; v_count int:=0;
 begin
   if not public.app_is_admin() then raise exception 'Active admin required'; end if;
@@ -216,7 +216,7 @@ begin
     for i in 1..v_item.quantity loop
       v_code:='SUR-'||to_char(now(),'YYYY')||'-'||upper(substr(replace(gen_random_uuid()::text,'-',''),1,10));
       insert into public.sur_trees(tree_id,profile_id,order_item_id,species,care_plan,qr_token_hash)
-      values(v_code,v_order.profile_id,v_item.id,v_item.species,v_item.care_plan,encode(digest(gen_random_uuid()::text,'sha256'),'hex')) returning id into v_tree;
+      values(v_code,v_order.profile_id,v_item.id,v_item.species,v_item.care_plan,encode(extensions.digest(gen_random_uuid()::text,'sha256'::text),'hex')) returning id into v_tree;
       insert into public.sur_contracts(tree_id,profile_id,version,legal_name)
       select v_tree,v_order.profile_id,'SUR-TREE-2026-01',p.full_name from public.profiles p where p.id=v_order.profile_id;
       v_count:=v_count+1;

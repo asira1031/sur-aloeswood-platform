@@ -21,13 +21,17 @@ export default function TreeCheckout(){
 
   useEffect(()=>{ void loadOrders(); },[]);
   async function loadOrders(){ const {data:{user}}=await supabase.auth.getUser(); if(!user)return;
-    const {data}=await supabase.from("sur_tree_orders").select("id,order_no,status,exact_total,created_at").order("created_at",{ascending:false}).limit(30); setOrders((data||[]) as Order[]); }
+    const {data,error:loadError}=await supabase.from("sur_tree_orders").select("id,order_no,status,exact_total,created_at").order("created_at",{ascending:false}).limit(30); if(loadError){setError(true);setNotice("Recent orders could not load. Please retry before resubmitting a payment.");return;} setOrders((data||[]) as Order[]); }
   function add(){setCart(x=>[...x,{id:crypto.randomUUID(),quantity:1,care_plan:"SKIP"}]);setCheckout(false);setNotice("");}
   function update(id:string,patch:Partial<CartLine>){setCart(x=>x.map(v=>v.id===id?{...v,...patch}:v));}
   function remove(id:string){setCart(x=>x.filter(v=>v.id!==id));}
   function leaveCheckout(){setCheckout(false);setCart([]);setNotice("Cart cleared. Add a tree again when you are ready to pay.");setError(false);}
   async function submit(){
+    if(busy)return;
     setNotice("");setError(false); if(!cart.length||!receipt||!sender.trim()||!reference.trim()||!date||!amount){setError(true);setNotice("Complete the Maya payment form and attach the receipt.");return;}
+    if(!["image/jpeg","image/png","image/webp","application/pdf"].includes(receipt.type)){setError(true);setNotice("Use a JPG, PNG, WebP or PDF receipt.");return;}
+    if(cart.some(line=>!Number.isInteger(line.quantity)||line.quantity<1||line.quantity>100)){setError(true);setNotice("Use a whole quantity from 1 to 100 per cart line.");return;}
+    if(!Number.isFinite(Number(amount))||Number(amount)<=0){setError(true);setNotice("Enter a valid amount.");return;}
     if(receipt.size>10*1024*1024){setError(true);setNotice("Receipt must be 10 MB or smaller.");return;}
     const {data:{user}}=await supabase.auth.getUser(); if(!user){setError(true);setNotice("Please sign in before submitting payment.");return;}
     setBusy(true);

@@ -85,7 +85,7 @@ export default function AdminFinanceDistributionPage() {
   }, [rows, period, beneficiary, sourceType, status, fromDate, toDate, search]);
 
   const payoutGroups = useMemo(() => {
-    const pendingRows = rows.filter((row) => String(row.settlement_status || "").toUpperCase() !== "SETTLED");
+    const pendingRows = rows.filter((row) => ["PENDING_SETTLEMENT", "READY_FOR_PAYOUT"].includes(String(row.settlement_status || "").toUpperCase()));
     const map = new Map<string, AnyRow[]>();
     const payoutMonths = new Set<string>();
 
@@ -127,7 +127,7 @@ export default function AdminFinanceDistributionPage() {
   }, [rows]);
 
   const totals = useMemo(() => {
-    const pending = rows.filter((row) => row.settlement_status !== "SETTLED");
+    const pending = rows.filter((row) => ["PENDING_SETTLEMENT", "READY_FOR_PAYOUT"].includes(String(row.settlement_status || "").toUpperCase()));
     return {
       rowCount: filteredRows.length,
       gross: filteredRows.reduce((sum, row) => sum + Number(row.gross_amount || 0), 0),

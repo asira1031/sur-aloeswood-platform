@@ -21,8 +21,7 @@ async function authorize(request: NextRequest) {
   if (error || !auth.user?.id || !auth.user.email) return null;
   const columns = "id,email,role,account_status";
   const { data: linked } = await db.from("profiles").select(columns).eq("auth_user_id", auth.user.id).maybeSingle();
-  const { data: byEmail } = linked ? { data: null } : await db.from("profiles").select(columns).eq("email", auth.user.email.toLowerCase().trim()).maybeSingle();
-  const profile = linked || byEmail;
+  const profile = linked;
   if (!profile || !["ADMIN", "SUPER_ADMIN"].includes(normalizeRole(profile.role)) || String(profile.account_status || "").toUpperCase() !== "ACTIVE") return null;
   return { id: auth.user.id, profileId: profile.id, email: auth.user.email };
 }

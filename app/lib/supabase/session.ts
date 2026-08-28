@@ -10,6 +10,7 @@ export type SurSession = {
 
 export type SurProfile = SurSession & {
   kyc_status?: string | null;
+  referral_code?: string | null;
 };
 
 export function saveSurSession(profile: SurSession) {
@@ -36,8 +37,8 @@ export function getRoleRoute(role?: string | null) {
   const value = String(role || "").toUpperCase();
 
   if (["ADMIN", "SUPER_ADMIN", "STAFF"].includes(value)) return "/admin/dashboard";
-  if (["FARMER", "GARDENER", "CARETAKER"].includes(value)) return "/farmer/dashboard";
-  return "/investor/dashboard";
+  if (["FARMER", "GARDENER", "CARETAKER"].includes(value)) return "/farmer/daily-care";
+  return "/investor/my-trees";
 }
 
 export async function getAuthenticatedProfile(): Promise<SurProfile | null> {
@@ -52,7 +53,7 @@ export async function getAuthenticatedProfile(): Promise<SurProfile | null> {
 
   const { data: profileByAuthUserId } = await supabase
     .from("profiles")
-    .select("id,email,full_name,role,account_status,kyc_status")
+    .select("id,email,full_name,role,account_status,kyc_status,referral_code")
     .eq("auth_user_id", authData.user.id)
     .maybeSingle();
 
@@ -63,7 +64,7 @@ export async function getAuthenticatedProfile(): Promise<SurProfile | null> {
 
   const { data: profileByEmail } = await supabase
     .from("profiles")
-    .select("id,email,full_name,role,account_status,kyc_status")
+    .select("id,email,full_name,role,account_status,kyc_status,referral_code")
     .eq("email", email)
     .maybeSingle();
 

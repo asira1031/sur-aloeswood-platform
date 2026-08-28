@@ -63,7 +63,7 @@ test("daily care uploads the original image and submits through an audited RPC",
   assert.match(screen, /sur-tree-evidence/);
   assert.match(screen, /supabase\.rpc\("sur_submit_daily_tree_update"/);
   assert.match(screen, /upsert:\s*false/);
-  assert.match(screen, /does not reduce photo quality/i);
+  assert.match(screen, /does not reduce photo quality|Original photo quality will be kept/i);
   assert.doesNotMatch(screen, /(document\.createElement\(["']canvas|toDataURL|getContext\(["']2d|resizeImage)/i);
 });
 

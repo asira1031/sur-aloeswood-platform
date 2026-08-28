@@ -141,6 +141,7 @@ export const settlementStatuses = [
   "SETTLED",
   "ON_HOLD",
   "FAILED",
+  "VOID",
 ];
 
 export function calculateDistribution(ruleKey: DistributionRuleKey, grossAmount: number) {

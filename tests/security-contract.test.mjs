@@ -10,7 +10,7 @@ const read = (path) => readFileSync(resolve(ROOT, path), "utf8");
 test("public registration endpoints retain abuse controls and do not overwrite auth passwords", () => {
   for (const path of ["app/api/register/coplanter/route.ts", "app/api/farmer/register/route.ts"]) {
     const source = read(path);
-    assert.match(source, /enforceRateLimit/);
+    assert.match(source, /enforce(?:Durable)?RateLimit/);
     assert.doesNotMatch(source, /updateUserById\s*\([^)]*password/s);
   }
 });

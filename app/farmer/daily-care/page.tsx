@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { getAuthenticatedProfile } from "@/app/lib/auth/session";
 import { supabase } from "@/app/lib/supabase/client";
@@ -32,6 +33,10 @@ export default function CaretakerDailyCarePage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [profileId, setProfileId] = useState("");
+  const [problemOpen, setProblemOpen] = useState(false);
+  const [problem, setProblem] = useState("");
+  const [reporting, setReporting] = useState(false);
 
   useEffect(() => {
     void load();
@@ -46,6 +51,7 @@ export default function CaretakerDailyCarePage() {
       setLoading(false);
       return;
     }
+    setProfileId(profile.id);
 
     const assignmentResult = await supabase
       .from("sur_tree_assignments")
@@ -71,17 +77,24 @@ export default function CaretakerDailyCarePage() {
         ? supabase.from("sur_trees").select("id,tree_id,species,care_plan,status,general_location,planted_at,created_at").in("id", treeIds)
         : Promise.resolve({ data: [], error: null }),
       treeIds.length
-        ? supabase.from("sur_tree_updates").select("id,tree_id,observed_on,health_status,notes,status,review_note,created_at").in("tree_id", treeIds).order("created_at", { ascending: false }).limit(300)
+        ? supabase.from("sur_tree_updates").select("id,tree_id,observed_on,health_status,notes,photo_path,status,review_note,created_at").in("tree_id", treeIds).order("created_at", { ascending: false }).limit(300)
         : Promise.resolve({ data: [], error: null }),
     ]);
 
+    if (treeResult.error || updateResult.error) { setMessage("Tree records or submitted reports could not load. Please retry."); setLoading(false); return; }
     const treeRows = (treeResult.data || []) as Row[];
     const requestedCode = new URLSearchParams(window.location.search).get("tree")?.trim().toUpperCase() || "";
     const requestedTree = treeRows.find((tree) => String(tree.tree_id).toUpperCase() === requestedCode);
 
     setAssignments(assignmentRows);
     setTrees(treeRows);
-    setUpdates((updateResult.data || []) as Row[]);
+    const updateRows = (updateResult.data || []) as Row[];
+    const updatesWithPhotos = await Promise.all(updateRows.map(async (row) => {
+      if (!row.photo_path) return row;
+      const { data } = await supabase.storage.from("sur-tree-evidence").createSignedUrl(String(row.photo_path), 900);
+      return { ...row, photo_url: data?.signedUrl || "" };
+    }));
+    setUpdates(updatesWithPhotos);
     setSelectedTreeId((current) => requestedTree ? String(requestedTree.id) : treeIds.includes(current) ? current : treeIds[0] || "");
     setLoading(false);
   }
@@ -158,75 +171,101 @@ export default function CaretakerDailyCarePage() {
       return;
     }
 
-    setMessage("Daily update submitted in original quality. It is waiting for admin review before the customer can see it.");
+    const successMessage = "Daily update submitted in original quality. It is waiting for admin review before the customer can see it.";
     setPhoto(null);
     setNotes("");
     setHealth("HEALTHY");
     setObservedOn(todayLocal());
     setSubmitting(false);
     await load();
+    setMessage(successMessage);
+  }
+
+  async function reportProblem() {
+    const clean = problem.trim();
+    if (!clean || !profileId || reporting) return;
+    setReporting(true);
+    setMessage("");
+    const subject = selectedTree ? `Caretaker problem · ${String(selectedTree.tree_id)}` : "Caretaker problem";
+    const { data: chats, error: findError } = await supabase.from("support_chats").select("id").eq("profile_id", profileId).order("updated_at", { ascending: false }).limit(1);
+    if (findError) { setMessage("Problem reporting is temporarily unavailable."); setReporting(false); return; }
+    let chatId = chats?.[0]?.id as string | undefined;
+    if (!chatId) {
+      const { data, error } = await supabase.from("support_chats").insert({ profile_id: profileId, subject, status: "ADMIN_QUEUE", channel: "CARETAKER", escalated_at: new Date().toISOString() }).select("id").single();
+      if (error) { setMessage(error.message); setReporting(false); return; }
+      chatId = String(data.id);
+    }
+    const { error } = await supabase.from("support_messages").insert({ chat_id: chatId, profile_id: profileId, sender_role: "CUSTOMER", body: `${subject}\n\n${clean}` });
+    if (error) { setMessage(error.message); setReporting(false); return; }
+    const { error: queueError } = await supabase.from("support_chats").update({ status: "ADMIN_QUEUE", updated_at: new Date().toISOString() }).eq("id", chatId);
+    setProblem(""); setProblemOpen(false); setReporting(false);
+    setMessage(queueError ? "Report saved, but the Admin queue could not refresh. Do not resend." : "Problem sent to Agarwood Support. Admin can now review it.");
   }
 
   return (
-    <main className="min-h-screen bg-[#07150f] p-3 text-white sm:p-5 lg:p-8">
+    <main className="min-h-screen bg-[#f4f1e7] p-3 text-[#10271f] sm:p-5 lg:p-8">
       <div className="mx-auto max-w-6xl">
-        <header className="rounded-[1.5rem] border border-white/10 bg-gradient-to-r from-emerald-950 to-slate-950 p-5 sm:rounded-[2rem] sm:p-7">
-          <p className="text-xs font-black uppercase tracking-[.16em] text-emerald-300 sm:tracking-[.25em]">Caretaker workspace</p>
-          <h1 className="mt-3 text-3xl font-black sm:text-4xl">Daily Tree Care</h1>
-          <p className="mt-3 max-w-3xl text-sm leading-7 text-white/65">Choose the assigned Tree ID, take one clear photo, add today&apos;s field note, and submit when internet is available. The app uploads the original file without compression.</p>
+        <header className="rounded-[1.5rem] bg-[#073d2e] p-5 text-white shadow-xl shadow-[#073d2e]/10 sm:rounded-[2rem] sm:p-7">
+          <p className="text-xs font-black uppercase tracking-[.16em] text-[#9ee7c5] sm:tracking-[.25em]">My Care Work</p>
+          <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div><h1 className="text-3xl font-black sm:text-4xl">Today&apos;s tree care</h1><p className="mt-2 text-sm text-white/70">Open a task, record the work, then send it to Admin.</p></div>
+            <div className="flex flex-wrap gap-2"><div className="w-fit rounded-2xl bg-white/10 px-4 py-3 text-sm font-black"><span className="text-[#9ee7c5]">{assignments.length}</span> active {assignments.length === 1 ? "task" : "tasks"}</div><button type="button" onClick={() => setProblemOpen(true)} className="rounded-2xl border border-white/20 px-4 py-3 text-sm font-black">Report a Problem</button></div>
+          </div>
         </header>
 
-        {message && <p aria-live="polite" className="mt-5 rounded-2xl border border-amber-200/25 bg-amber-300/10 p-4 text-sm font-bold text-amber-100">{message}</p>}
+        {message && <p aria-live="polite" className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm font-bold text-amber-900">{message}</p>}
 
-        <div className="mt-5 grid gap-5 lg:grid-cols-[.7fr_1.3fr]">
-          <section className="min-w-0 rounded-[1.5rem] border border-white/10 bg-white/[.06] p-4 sm:rounded-[2rem] sm:p-5">
-            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="text-xl font-black sm:text-2xl">Assigned Tree IDs</h2><p className="mt-1 text-xs text-white/45">The admin controls this list.</p></div><button onClick={load} className="mobile-primary-action shrink-0 rounded-xl border border-white/15 px-3 py-2 text-xs font-black">{loading ? "Loading…" : "Refresh"}</button></div>
+        <div className="mt-5 grid gap-5 md:grid-cols-[minmax(240px,.75fr)_minmax(0,1.25fr)]">
+          <section className="min-w-0 rounded-[1.5rem] border border-[#ded8ca] bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-5">
+            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[.18em] text-[#08745b]">Task list</p><h2 className="mt-1 text-xl font-black sm:text-2xl">Today&apos;s Tasks</h2><p className="mt-1 text-xs text-[#718078]">Choose one task to begin.</p></div><button onClick={load} className="mobile-primary-action shrink-0 rounded-xl border border-[#d5ddd8] bg-[#f7f9f7] px-3 py-2 text-xs font-black">{loading ? "Loading…" : "Refresh"}</button></div>
             <div className="mt-5 space-y-3">
               {assignments.length === 0 && !loading ? <Empty text="No active Tree ID assignment. Ask the admin to assign a signed tree." /> : assignments.map((assignment) => {
                 const tree = trees.find((row) => row.id === assignment.tree_id);
                 const todayDone = updates.some((row) => row.tree_id === assignment.tree_id && String(row.observed_on) === todayLocal() && ["PENDING_ADMIN_REVIEW", "APPROVED"].includes(String(row.status)));
-                return <button key={String(assignment.id)} onClick={() => setSelectedTreeId(String(assignment.tree_id))} className={`w-full rounded-2xl border p-4 text-left ${selectedTreeId === String(assignment.tree_id) ? "border-emerald-300 bg-emerald-300/10" : "border-white/10 bg-black/20"}`}>
-                  <div className="flex min-w-0 items-start justify-between gap-3"><div className="min-w-0"><p className="break-words font-black text-emerald-200">{String(tree?.tree_id || assignment.tree_id)}</p><p className="mt-1 text-xs text-white/45">{String(tree?.species || "Aquilaria malaccensis")}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black ${todayDone ? "bg-emerald-300/15 text-emerald-200" : "bg-amber-300/15 text-amber-100"}`}>{todayDone ? "TODAY SUBMITTED" : "TODAY DUE"}</span></div>
+                return <button key={String(assignment.id)} onClick={() => setSelectedTreeId(String(assignment.tree_id))} className={`w-full rounded-2xl border p-4 text-left transition ${selectedTreeId === String(assignment.tree_id) ? "border-[#08745b] bg-[#eaf6ef] shadow-sm" : "border-[#e4dfd3] bg-[#faf9f5] hover:border-[#9cc9b5]"}`}>
+                  <div className="flex min-w-0 items-start justify-between gap-3"><div className="min-w-0"><p className="break-words font-black text-[#073d2e]">{String(assignment.task_title || "Daily tree care")}</p><p className="mt-1 text-xs font-bold text-[#718078]">Record {String(tree?.tree_id || assignment.tree_id).replace(/^SUR-\d{4}-/i, "")}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black ${todayDone ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{todayDone ? "SUBMITTED" : "DUE TODAY"}</span></div>
+                  <p className="mt-3 text-xs text-[#617169]">Tap to open task →</p>
                 </button>;
               })}
             </div>
           </section>
 
           <div className="space-y-5">
-            <section className="min-w-0 rounded-[1.5rem] border border-white/10 bg-white/[.06] p-4 sm:rounded-[2rem] sm:p-6">
+            <section className="min-w-0 rounded-[1.5rem] border border-[#ded8ca] bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-6">
               {!selectedTree ? <Empty text="Select an assigned Tree ID." /> : <>
-                <p className="text-xs font-black uppercase tracking-[.2em] text-white/40">Selected Tree ID</p>
-                <h2 className="mt-2 break-words text-2xl font-black text-emerald-300 sm:text-3xl">{String(selectedTree.tree_id)}</h2>
-                <div className="mt-5 grid gap-3 sm:grid-cols-2"><Info label="Task" value={String(selectedAssignment?.task_title || "Daily tree care and evidence")} /><Info label="General location" value={String(selectedTree.general_location || "Provided privately by admin")} /></div>
-                {Boolean(selectedAssignment?.admin_note) && <p className="mt-4 rounded-2xl bg-sky-300/10 p-4 text-sm font-bold leading-6 text-sky-100">Admin instruction: {String(selectedAssignment?.admin_note)}</p>}
+                <p className="text-xs font-black uppercase tracking-[.2em] text-[#08745b]">Daily report</p>
+                <h2 className="mt-2 break-words text-2xl font-black text-[#073d2e] sm:text-3xl">{String(selectedAssignment?.task_title || "Add care update")}</h2>
+                <p className="mt-2 text-sm font-bold text-[#718078]">Record {String(selectedTree.tree_id).replace(/^SUR-\d{4}-/i, "")} · {String(selectedTree.general_location || "Location provided by Admin")}</p>
+                {Boolean(selectedAssignment?.admin_note) && <p className="mt-4 rounded-2xl bg-sky-50 p-4 text-sm font-bold leading-6 text-sky-900">Admin note: {String(selectedAssignment?.admin_note)}</p>}
 
                 <form onSubmit={submit} className="mt-6 space-y-4">
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="text-sm font-black">Observation date<input type="date" value={observedOn} max={todayLocal()} onChange={(event) => setObservedOn(event.target.value)} required className="mt-2 block w-full rounded-2xl border border-white/15 bg-black/25 px-4 py-3 text-base text-white" /></label>
-                    <label className="text-sm font-black">Tree condition<select value={health} onChange={(event) => setHealth(event.target.value)} className="mt-2 block w-full rounded-2xl border border-white/15 bg-[#10251a] px-4 py-3 text-base text-white">{healthOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
+                    <label className="text-sm font-black">Date<input type="date" value={observedOn} max={todayLocal()} onChange={(event) => setObservedOn(event.target.value)} required className="mt-2 block w-full rounded-2xl border border-[#d8d4c8] bg-[#faf9f5] px-4 py-3 text-base" /></label>
+                    <label className="text-sm font-black">Tree condition<select value={health} onChange={(event) => setHealth(event.target.value)} className="mt-2 block w-full rounded-2xl border border-[#d8d4c8] bg-[#faf9f5] px-4 py-3 text-base">{healthOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
                   </div>
-                  <label className="block text-sm font-black">Today&apos;s clear field note<textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} maxLength={1500} required placeholder="Example: Leaves are green; soil checked; no visible pests." className="mt-2 block w-full rounded-2xl border border-white/15 bg-black/25 px-4 py-3 text-base text-white placeholder:text-white/30" /></label>
-                  <label className="block rounded-2xl border border-dashed border-emerald-300/30 bg-emerald-300/10 p-4 text-sm font-black sm:p-5">Original-quality tree photo<input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment" onChange={(event) => setPhoto(event.target.files?.[0] || null)} required className="mt-3 block w-full text-sm text-white/70 file:mr-3 file:min-h-12 file:rounded-xl file:border-0 file:bg-emerald-400 file:px-4 file:py-2 file:font-black file:text-emerald-950" />{photo && <span className="mt-3 block break-words text-xs text-emerald-200">Selected: {photo.name} · {(photo.size / 1024 / 1024).toFixed(1)} MB</span>}</label>
-                  <p className="text-xs leading-6 text-white/45">Submission requires internet. The original image is kept; the app does not reduce photo quality. Maximum 15 MB.</p>
+                  <label className="block text-sm font-black">What did you do today?<textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} maxLength={1500} required placeholder="Example: Checked the soil and leaves. No visible pests." className="mt-2 block w-full rounded-2xl border border-[#d8d4c8] bg-[#faf9f5] px-4 py-3 text-base placeholder:text-[#9aa49f]" /></label>
+                  <label className="block rounded-2xl border border-dashed border-[#8bbca6] bg-[#edf8f1] p-4 text-sm font-black sm:p-5">📷 Add today&apos;s tree photo<input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment" onChange={(event) => setPhoto(event.target.files?.[0] || null)} required className="mt-3 block w-full text-sm text-[#617169] file:mr-3 file:min-h-12 file:rounded-xl file:border-0 file:bg-[#08745b] file:px-4 file:py-2 file:font-black file:text-white" />{photo && <span className="mt-3 block break-words text-xs text-[#08745b]">Selected: {photo.name} · {(photo.size / 1024 / 1024).toFixed(1)} MB</span>}</label>
+                  <p className="text-xs leading-6 text-[#718078]">Internet is needed only when you submit. Original photo quality will be kept.</p>
                   {alreadySubmitted && <p className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm font-bold text-amber-100">An update for this Tree ID and date is already pending or approved.</p>}
-                  <button disabled={submitting || alreadySubmitted} className="mobile-sticky-action w-full rounded-2xl bg-emerald-400 px-6 py-4 font-black text-emerald-950 disabled:opacity-40 sm:w-auto">{submitting ? "Uploading original photo…" : "Submit for admin review"}</button>
+                  <button disabled={submitting || alreadySubmitted} className="mobile-sticky-action w-full rounded-2xl bg-[#073d2e] px-6 py-4 font-black text-white shadow-lg disabled:opacity-40 sm:w-auto">{submitting ? "Sending report…" : "Send Daily Report"}</button>
                 </form>
               </>}
             </section>
 
-            <section className="min-w-0 rounded-[1.5rem] border border-white/10 bg-white/[.06] p-4 sm:rounded-[2rem] sm:p-6">
-              <h2 className="text-2xl font-black">Submission history</h2>
-              <div className="mt-5 space-y-3">{selectedUpdates.length === 0 ? <Empty text="No update submitted for this Tree ID yet." /> : selectedUpdates.map((update) => <div key={String(update.id)} className="rounded-2xl border border-white/10 bg-black/20 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{dateText(String(update.observed_on))}</p><p className="mt-1 text-xs text-white/45">{pretty(String(update.health_status))}</p></div><Status value={String(update.status)} /></div><p className="mt-3 text-sm leading-6 text-white/65">{String(update.notes)}</p>{Boolean(update.review_note) && <p className="mt-3 text-xs font-bold text-amber-100">Admin note: {String(update.review_note)}</p>}</div>)}</div>
+            <section className="min-w-0 rounded-[1.5rem] border border-[#ded8ca] bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-6">
+              <h2 className="text-2xl font-black">Recent reports</h2>
+              <div className="mt-5 space-y-3">{selectedUpdates.length === 0 ? <Empty text="No report submitted for this tree yet." /> : selectedUpdates.map((update) => <ReportCard key={String(update.id)} update={update} onCorrect={() => { setObservedOn(String(update.observed_on)); setHealth(String(update.health_status)); setNotes(String(update.notes)); window.scrollTo({ top: 0, behavior: "smooth" }); }} />)}</div>
             </section>
           </div>
         </div>
+        {problemOpen && <div className="fixed inset-0 z-50 grid place-items-end bg-black/45 p-0 sm:place-items-center sm:p-5" onMouseDown={() => setProblemOpen(false)}><section role="dialog" aria-modal="true" aria-label="Report a caretaker problem" onMouseDown={(event) => event.stopPropagation()} className="w-full rounded-t-[2rem] bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-[2rem] sm:p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-[.18em] text-[#08745b]">Agarwood Support</p><h2 className="mt-1 text-2xl font-black">Report a Problem</h2></div><button type="button" onClick={() => setProblemOpen(false)} className="grid h-10 w-10 place-items-center rounded-full bg-[#f1eee5] text-xl" aria-label="Close">×</button></div><p className="mt-3 text-sm leading-6 text-[#617169]">Tell Admin what stopped you from completing this tree task.</p><textarea value={problem} onChange={(event) => setProblem(event.target.value)} rows={5} maxLength={1500} placeholder="Example: The tree tag is damaged, or I cannot upload today’s photo." className="mt-4 w-full rounded-2xl border border-[#d8d4c8] bg-[#faf9f5] p-4 text-base outline-none focus:border-[#08745b]"/><button type="button" onClick={() => void reportProblem()} disabled={reporting || problem.trim().length < 3} className="mt-4 w-full rounded-2xl bg-[#073d2e] px-5 py-4 font-black text-white disabled:opacity-40">{reporting ? "Sending…" : "Send to Admin"}</button></section></div>}
       </div>
     </main>
   );
 }
 
-function Info({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl bg-black/20 p-4"><p className="text-xs font-black uppercase text-white/35">{label}</p><p className="mt-2 text-sm font-bold leading-6">{value}</p></div>; }
-function Status({ value }: { value: string }) { const approved = value === "APPROVED"; const rejected = value === "REJECTED"; const tone = approved ? "bg-emerald-300/15 text-emerald-200" : rejected ? "bg-red-300/15 text-red-200" : "bg-amber-300/15 text-amber-100"; return <span className={`rounded-full px-3 py-1 text-[10px] font-black ${tone}`}>{pretty(value)}</span>; }
-function Empty({ text }: { text: string }) { return <p className="rounded-2xl border border-dashed border-white/15 bg-black/15 p-5 text-sm font-bold text-white/50">{text}</p>; }
+function Status({ value }: { value: string }) { const approved = value === "APPROVED"; const rejected = value === "REJECTED"; const tone = approved ? "bg-emerald-100 text-emerald-800" : rejected ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"; return <span className={`rounded-full px-3 py-1 text-[10px] font-black ${tone}`}>{pretty(value)}</span>; }
+function ReportCard({ update, onCorrect }: { update: Row; onCorrect: () => void }) { const rejected = String(update.status) === "REJECTED"; return <article className={`overflow-hidden rounded-2xl border ${rejected ? "border-red-200 bg-red-50" : "border-[#e4dfd3] bg-[#faf9f5]"}`}>{Boolean(update.photo_url) && <div className="relative h-44 w-full sm:h-52"><Image unoptimized fill sizes="(max-width: 768px) 100vw, 640px" src={String(update.photo_url)} alt={`Submitted tree on ${dateText(String(update.observed_on))}`} className="object-cover"/></div>}<div className="p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{dateText(String(update.observed_on))}</p><p className="mt-1 text-xs text-[#718078]">{pretty(String(update.health_status))}</p></div><Status value={String(update.status)} /></div><p className="mt-3 text-sm leading-6 text-[#52655c]">{String(update.notes)}</p>{Boolean(update.review_note) && <div className="mt-3 rounded-xl bg-white/80 p-3 text-xs font-bold leading-5 text-red-800"><span className="block text-[10px] uppercase tracking-[.14em]">Admin correction</span>{String(update.review_note)}</div>}{rejected && <button type="button" onClick={onCorrect} className="mt-4 w-full rounded-xl bg-red-700 px-4 py-3 text-sm font-black text-white">Correct and Resubmit</button>}</div></article>; }
+function Empty({ text }: { text: string }) { return <p className="rounded-2xl border border-dashed border-[#d8d4c8] bg-[#faf9f5] p-5 text-sm font-bold text-[#718078]">{text}</p>; }
 function pretty(value: string) { return String(value || "PENDING").replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()); }
 function dateText(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" }); }

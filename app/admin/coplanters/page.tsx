@@ -291,7 +291,7 @@ function getKycFiles(profile: AnyRow) {
   return [
     { label: "Valid ID", url: firstText(profile, ["kyc_id_url", "kyc_document_url", "valid_id_url", "id_document_url", "government_id_url"]) },
     { label: "Selfie / Photo", url: firstText(profile, ["kyc_selfie_url", "selfie_url", "kyc_photo_url", "face_photo_url"]) },
-    { label: "Extra Document", url: firstText(profile, ["kyc_extra_url", "proof_of_address_url", "supporting_document_url"]) },
+    { label: "Valid ID — Back", url: firstText(profile, ["kyc_extra_url", "proof_of_address_url", "supporting_document_url"]) },
   ].filter((file) => file.url);
 }
 

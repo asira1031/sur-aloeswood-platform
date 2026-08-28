@@ -224,22 +224,22 @@ export default function LoginPage() {
     <main className="relative min-h-screen overflow-hidden bg-green-950 text-white">
       <div
         className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: "url('/forest-bg.jpg')" }}
+        style={{ backgroundImage: "url('/sur-bg-auth-v2.png')" }}
       />
       <div className="absolute inset-0 bg-gradient-to-r from-green-950/85 via-green-950/55 to-blue-950/45" />
 
-      <nav className="relative z-10 flex items-center justify-between px-8 py-6 lg:px-16">
-        <Link href="/" className="flex items-center gap-4">
+      <nav className="relative z-10 flex items-center justify-between gap-3 px-4 py-4 sm:px-8 sm:py-6 lg:px-16">
+        <Link href="/" className="flex min-w-0 items-center gap-2 sm:gap-4">
           <img
-            src="/agarwood.png"
+            src="/sur-logo.png"
             alt="SUR Aloeswood"
-            className="h-14 w-14 rounded-2xl object-cover shadow-lg"
+            className="h-10 w-10 shrink-0 rounded-xl object-cover shadow-lg sm:h-14 sm:w-14 sm:rounded-2xl"
           />
-          <div>
-            <h1 className="text-2xl font-black tracking-wide">
+          <div className="min-w-0">
+            <h1 className="truncate text-base font-black tracking-wide sm:text-2xl">
               SUR ALOESWOOD
             </h1>
-            <p className="text-sm font-semibold text-green-200">
+            <p className="hidden text-sm font-semibold text-green-200 sm:block">
               Co-Planter Management Platform
             </p>
           </div>
@@ -247,31 +247,31 @@ export default function LoginPage() {
 
         <Link
           href="/register"
-          className="rounded-full bg-green-600 px-6 py-3 font-bold text-white shadow-lg hover:bg-green-700"
+          className="shrink-0 whitespace-nowrap rounded-full bg-green-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg hover:bg-green-700 sm:px-6 sm:py-3 sm:text-base"
         >
           Register
         </Link>
       </nav>
 
-      <section className="relative z-10 mx-auto grid min-h-[80vh] max-w-7xl items-center gap-12 px-8 lg:grid-cols-2 lg:px-16">
+      <section className="relative z-10 mx-auto grid min-h-[80vh] max-w-7xl items-center gap-8 px-4 pb-8 sm:px-8 lg:grid-cols-2 lg:gap-12 lg:px-16">
         <div>
           <p className="inline-flex rounded-full bg-white/15 px-5 py-2 text-sm font-bold text-green-100 backdrop-blur">
             Secure Access Portal
           </p>
 
-          <h2 className="mt-6 text-5xl font-black leading-tight lg:text-7xl">
+          <h2 className="mt-6 text-4xl font-black leading-tight sm:text-5xl lg:text-7xl">
             Welcome back,
             <span className="block text-green-300">Co-Planter.</span>
           </h2>
 
-          <p className="mt-6 max-w-xl text-lg leading-8 text-green-50/90">
+          <p className="mt-5 max-w-xl text-base leading-7 text-green-50/90 sm:mt-6 sm:text-lg sm:leading-8">
             Access your wallet, tree portfolio, digital certificates, plantation
             monitoring, referral records, recovery fund, and support center.
           </p>
         </div>
 
-        <div className="rounded-[2rem] border border-white/20 bg-white/95 p-8 text-slate-900 shadow-2xl backdrop-blur-xl">
-          <h3 className="text-3xl font-black text-blue-950">
+        <div className="rounded-[1.5rem] border border-white/20 bg-white/95 p-5 text-slate-900 shadow-2xl backdrop-blur-xl sm:rounded-[2rem] sm:p-8">
+          <h3 className="text-2xl font-black text-blue-950 sm:text-3xl">
             {resetMode ? "Reset Password" : "Login to Platform"}
           </h3>
           <p className="mt-2 text-slate-500">

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { enforceRateLimit } from "@/app/lib/security/server";
+import { enforceDurableRateLimit } from "@/app/lib/security/server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -15,8 +15,9 @@ function makeReferralCode(fullName: string) {
 }
 
 export async function POST(request: NextRequest) {
-  const rateLimit = enforceRateLimit(request, "coplanter-register", 5, 60 * 60 * 1000);
+  const rateLimit = await enforceDurableRateLimit(request, "coplanter-register", 5, 60 * 60);
   if (!rateLimit.allowed) {
+    if (rateLimit.unavailable) return NextResponse.json({ error: "Registration is temporarily unavailable. Please try again later." }, { status: 503, headers: { "Retry-After": "60" } });
     return NextResponse.json(
       { error: "Too many registration attempts. Please try again later." },
       { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
@@ -119,6 +120,7 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (profileError || !profile) {
+    if (authUserId) await admin.auth.admin.deleteUser(authUserId);
     return NextResponse.json({ error: profileError?.message || "Unable to create profile." }, { status: 500 });
   }
 
@@ -129,6 +131,7 @@ export async function POST(request: NextRequest) {
 
   if (walletError) {
     await admin.from("profiles").delete().eq("id", profile.id);
+    if (authUserId) await admin.auth.admin.deleteUser(authUserId);
     return NextResponse.json({ error: walletError.message }, { status: 500 });
   }
 

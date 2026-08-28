@@ -25,17 +25,18 @@ export default function AdminCareOperationsPage() {
     setLoading(true);
     setMessage("");
 
-    const [treeResult, assignmentResult, caretakerResult, updateResult] = await Promise.all([
+    const [treeResult, assignmentResult, caretakerResult, updateResult, gardenerResult] = await Promise.all([
       supabase.from("sur_trees").select("id,tree_id,profile_id,species,care_plan,status,general_location,caretaker_profile_id,activated_at,planted_at,created_at").order("created_at", { ascending: false }),
       supabase.from("sur_tree_assignments").select("id,tree_id,caretaker_profile_id,status,task_title,admin_note,assigned_at,updated_at"),
-      supabase.from("profiles").select("id,full_name,email,role,account_status").in("role", ["FARMER", "GARDENER", "CARETAKER"]).eq("account_status", "ACTIVE").order("full_name"),
+      supabase.from("profiles").select("id,full_name,email,role,account_status").eq("account_status", "ACTIVE").order("full_name"),
       supabase.from("sur_tree_updates").select("id,tree_id,caretaker_profile_id,observed_on,health_status,notes,photo_path,status,review_note,reviewed_at,created_at").order("created_at", { ascending: false }).limit(500),
+      supabase.from("gardeners").select("email,status").in("status", ["ACTIVE", "APPROVED"]),
     ]);
 
     const setupError = [assignmentResult.error, updateResult.error].find((error) => error?.code === "PGRST205");
     if (setupError) {
       setMessage("Care Operations needs the one-time 082-tree-care-operations migration.");
-    } else if (treeResult.error || assignmentResult.error || caretakerResult.error || updateResult.error) {
+    } else if (treeResult.error || assignmentResult.error || caretakerResult.error || updateResult.error || gardenerResult.error) {
       setMessage("Care Operations could not load. Run Guardian verification before assigning or reviewing work.");
     }
 
@@ -51,7 +52,8 @@ export default function AdminCareOperationsPage() {
 
     setTrees(treeRows);
     setAssignments((assignmentResult.data || []) as Row[]);
-    setCaretakers((caretakerResult.data || []) as Row[]);
+    const approvedEmails = new Set((gardenerResult.data || []).map(row => String(row.email).trim().toLowerCase()));
+    setCaretakers(((caretakerResult.data || []) as Row[]).filter(row => approvedEmails.has(String(row.email).trim().toLowerCase())));
     setUpdates(updateRows);
     setSelectedTreeId((current) => treeRows.some((tree) => tree.id === current) ? current : String(treeRows[0]?.id || ""));
     setLoading(false);
@@ -83,7 +85,7 @@ export default function AdminCareOperationsPage() {
     });
     setLoading(false);
     setMessage(error?.message || "Caretaker assigned. The Tree ID is now in the caretaker's daily task queue.");
-    if (!error) await load();
+    if (!error) { await load(); setMessage("Caretaker assigned successfully."); }
   }
 
   async function review(updateId: unknown, decision: "APPROVED" | "REJECTED") {
@@ -101,7 +103,7 @@ export default function AdminCareOperationsPage() {
     });
     setLoading(false);
     setMessage(error?.message || `Daily update ${decision.toLowerCase()}.`);
-    if (!error) await load();
+    if (!error) { await load(); setMessage(`Daily update ${decision.toLowerCase()}.`); }
   }
 
   return (
