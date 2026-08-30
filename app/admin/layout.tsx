@@ -87,12 +87,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
   const navigation = [
     { href: "/admin/dashboard", label: "Dashboard" },
-    { href: "/admin/coplanters", label: "Accounts" },
-    { href: "/admin/orders", label: "Trees & Contracts" },
-    { href: "/admin/care-operations", label: "Care" },
-    { href: "/admin/withdrawals", label: "Wallet" },
+    { href: "/admin/accounts", label: "Accounts" },
+    { href: "/admin/tree", label: "Tree" },
+    { href: "/admin/tasks", label: "Tasks" },
     { href: "/admin/support", label: "Support" },
-    { href: "/admin/guardian", label: "TOH Guardian" },
   ];
 
   return (

@@ -15,6 +15,12 @@ const healthOptions = [
   ["REPLACEMENT_REVIEW", "Needs replacement review"],
 ] as const;
 
+const carePeriods = [
+  ["MORNING", "Morning"],
+  ["AFTERNOON", "Afternoon"],
+  ["EVENING", "Evening"],
+] as const;
+
 function todayLocal() {
   const now = new Date();
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
@@ -28,6 +34,9 @@ export default function CaretakerDailyCarePage() {
   const [selectedTreeId, setSelectedTreeId] = useState("");
   const [observedOn, setObservedOn] = useState(todayLocal());
   const [health, setHealth] = useState("HEALTHY");
+  const [carePeriod, setCarePeriod] = useState("MORNING");
+  const [startedAt, setStartedAt] = useState("");
+  const [taskDone, setTaskDone] = useState("");
   const [notes, setNotes] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
   const [message, setMessage] = useState("");
@@ -77,7 +86,7 @@ export default function CaretakerDailyCarePage() {
         ? supabase.from("sur_trees").select("id,tree_id,species,care_plan,status,general_location,planted_at,created_at").in("id", treeIds)
         : Promise.resolve({ data: [], error: null }),
       treeIds.length
-        ? supabase.from("sur_tree_updates").select("id,tree_id,observed_on,health_status,notes,photo_path,status,review_note,created_at").in("tree_id", treeIds).order("created_at", { ascending: false }).limit(300)
+        ? supabase.from("sur_tree_updates").select("id,tree_id,observed_on,care_period,started_at,task_done,health_status,notes,photo_path,status,review_note,created_at").in("tree_id", treeIds).order("created_at", { ascending: false }).limit(300)
         : Promise.resolve({ data: [], error: null }),
     ]);
 
@@ -102,7 +111,7 @@ export default function CaretakerDailyCarePage() {
   const selectedTree = useMemo(() => trees.find((tree) => String(tree.id) === selectedTreeId) || null, [selectedTreeId, trees]);
   const selectedAssignment = useMemo(() => assignments.find((row) => String(row.tree_id) === selectedTreeId) || null, [assignments, selectedTreeId]);
   const selectedUpdates = useMemo(() => updates.filter((row) => String(row.tree_id) === selectedTreeId), [selectedTreeId, updates]);
-  const alreadySubmitted = selectedUpdates.some((row) => String(row.observed_on) === observedOn && ["PENDING_ADMIN_REVIEW", "APPROVED"].includes(String(row.status)));
+  const alreadySubmitted = selectedUpdates.some((row) => String(row.observed_on) === observedOn && String(row.care_period) === carePeriod && ["PENDING_ADMIN_REVIEW", "APPROVED"].includes(String(row.status)));
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -114,6 +123,14 @@ export default function CaretakerDailyCarePage() {
       setMessage("Take or select one clear original-quality tree photo.");
       return;
     }
+    if (!startedAt) {
+      setMessage("Enter what time you started this care task.");
+      return;
+    }
+    if (taskDone.trim().length < 3) {
+      setMessage("Tell Admin what care task you completed.");
+      return;
+    }
     if (photo.size > 15 * 1024 * 1024) {
       setMessage("The original photo is over 15 MB. Use a camera photo up to 15 MB; the app will not reduce its quality.");
       return;
@@ -122,12 +139,8 @@ export default function CaretakerDailyCarePage() {
       setMessage("The evidence must be an image file.");
       return;
     }
-    if (notes.trim().length < 3) {
-      setMessage("Add a short field note describing the tree today.");
-      return;
-    }
     if (alreadySubmitted) {
-      setMessage("This Tree ID already has an update pending or approved for that date.");
+      setMessage(`The ${carePeriod.toLowerCase()} report for this Tree ID is already pending or approved.`);
       return;
     }
 
@@ -143,7 +156,7 @@ export default function CaretakerDailyCarePage() {
     }
 
     const extension = photo.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
-    const photoPath = `${authUserId}/${selectedTree.id}/${observedOn}-${crypto.randomUUID()}.${extension}`;
+    const photoPath = `${authUserId}/${selectedTree.id}/${observedOn}-${carePeriod.toLowerCase()}-${crypto.randomUUID()}.${extension}`;
     const upload = await supabase.storage.from("sur-tree-evidence").upload(photoPath, photo, {
       cacheControl: "3600",
       upsert: false,
@@ -162,6 +175,9 @@ export default function CaretakerDailyCarePage() {
       p_notes: notes.trim(),
       p_photo_path: photoPath,
       p_observed_on: observedOn,
+      p_care_period: carePeriod,
+      p_started_at: startedAt,
+      p_task_done: taskDone.trim(),
     });
 
     if (error) {
@@ -174,6 +190,8 @@ export default function CaretakerDailyCarePage() {
     const successMessage = "Daily update submitted in original quality. It is waiting for admin review before the customer can see it.";
     setPhoto(null);
     setNotes("");
+    setTaskDone("");
+    setStartedAt("");
     setHealth("HEALTHY");
     setObservedOn(todayLocal());
     setSubmitting(false);
@@ -221,9 +239,9 @@ export default function CaretakerDailyCarePage() {
             <div className="mt-5 space-y-3">
               {assignments.length === 0 && !loading ? <Empty text="No active Tree ID assignment. Ask the admin to assign a signed tree." /> : assignments.map((assignment) => {
                 const tree = trees.find((row) => row.id === assignment.tree_id);
-                const todayDone = updates.some((row) => row.tree_id === assignment.tree_id && String(row.observed_on) === todayLocal() && ["PENDING_ADMIN_REVIEW", "APPROVED"].includes(String(row.status)));
+                const todayCount = updates.filter((row) => row.tree_id === assignment.tree_id && String(row.observed_on) === todayLocal() && ["PENDING_ADMIN_REVIEW", "APPROVED"].includes(String(row.status))).length;
                 return <button key={String(assignment.id)} onClick={() => setSelectedTreeId(String(assignment.tree_id))} className={`w-full rounded-2xl border p-4 text-left transition ${selectedTreeId === String(assignment.tree_id) ? "border-[#08745b] bg-[#eaf6ef] shadow-sm" : "border-[#e4dfd3] bg-[#faf9f5] hover:border-[#9cc9b5]"}`}>
-                  <div className="flex min-w-0 items-start justify-between gap-3"><div className="min-w-0"><p className="break-words font-black text-[#073d2e]">{String(assignment.task_title || "Daily tree care")}</p><p className="mt-1 text-xs font-bold text-[#718078]">Record {String(tree?.tree_id || assignment.tree_id).replace(/^SUR-\d{4}-/i, "")}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black ${todayDone ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{todayDone ? "SUBMITTED" : "DUE TODAY"}</span></div>
+                  <div className="flex min-w-0 items-start justify-between gap-3"><div className="min-w-0"><p className="break-words font-black text-[#073d2e]">{String(assignment.task_title || "Daily tree care")}</p><p className="mt-1 text-xs font-bold text-[#718078]">Record {String(tree?.tree_id || assignment.tree_id).replace(/^SUR-\d{4}-/i, "")}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black ${todayCount === 3 ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{todayCount}/3 TODAY</span></div>
                   <p className="mt-3 text-xs text-[#617169]">Tap to open task →</p>
                 </button>;
               })}
@@ -239,12 +257,15 @@ export default function CaretakerDailyCarePage() {
                 {Boolean(selectedAssignment?.admin_note) && <p className="mt-4 rounded-2xl bg-sky-50 p-4 text-sm font-bold leading-6 text-sky-900">Admin note: {String(selectedAssignment?.admin_note)}</p>}
 
                 <form onSubmit={submit} className="mt-6 space-y-4">
+                  <fieldset><legend className="text-sm font-black">When did you do the task?</legend><div className="mt-2 grid grid-cols-3 gap-2">{carePeriods.map(([value,label])=><button key={value} type="button" onClick={()=>setCarePeriod(value)} className={`rounded-2xl border px-2 py-3 text-sm font-black ${carePeriod===value?"border-[#08745b] bg-[#eaf6ef] text-[#073d2e]":"border-[#d8d4c8] bg-white text-[#617169]"}`}>{label}</button>)}</div></fieldset>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <label className="text-sm font-black">Date<input type="date" value={observedOn} max={todayLocal()} onChange={(event) => setObservedOn(event.target.value)} required className="mt-2 block w-full rounded-2xl border border-[#d8d4c8] bg-[#faf9f5] px-4 py-3 text-base" /></label>
-                    <label className="text-sm font-black">Tree condition<select value={health} onChange={(event) => setHealth(event.target.value)} className="mt-2 block w-full rounded-2xl border border-[#d8d4c8] bg-[#faf9f5] px-4 py-3 text-base">{healthOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
+                    <label className="text-sm font-black">Start time<input type="time" value={startedAt} onChange={(event)=>setStartedAt(event.target.value)} required className="mt-2 block w-full rounded-2xl border border-[#d8d4c8] bg-[#faf9f5] px-4 py-3 text-base" /></label>
                   </div>
-                  <label className="block text-sm font-black">What did you do today?<textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} maxLength={1500} required placeholder="Example: Checked the soil and leaves. No visible pests." className="mt-2 block w-full rounded-2xl border border-[#d8d4c8] bg-[#faf9f5] px-4 py-3 text-base placeholder:text-[#9aa49f]" /></label>
+                  <label className="block text-sm font-black">What task did you complete?<textarea value={taskDone} onChange={(event) => setTaskDone(event.target.value)} rows={3} maxLength={500} required placeholder="Example: Watered the tree and removed weeds around it." className="mt-2 block w-full rounded-2xl border border-[#d8d4c8] bg-[#faf9f5] px-4 py-3 text-base placeholder:text-[#9aa49f]" /></label>
+                  <label className="text-sm font-black">Tree condition<select value={health} onChange={(event) => setHealth(event.target.value)} className="mt-2 block w-full rounded-2xl border border-[#d8d4c8] bg-[#faf9f5] px-4 py-3 text-base">{healthOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
                   <label className="block rounded-2xl border border-dashed border-[#8bbca6] bg-[#edf8f1] p-4 text-sm font-black sm:p-5">📷 Add today&apos;s tree photo<input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment" onChange={(event) => setPhoto(event.target.files?.[0] || null)} required className="mt-3 block w-full text-sm text-[#617169] file:mr-3 file:min-h-12 file:rounded-xl file:border-0 file:bg-[#08745b] file:px-4 file:py-2 file:font-black file:text-white" />{photo && <span className="mt-3 block break-words text-xs text-[#08745b]">Selected: {photo.name} · {(photo.size / 1024 / 1024).toFixed(1)} MB</span>}</label>
+                  <label className="block text-sm font-black">Notes <span className="font-normal text-[#718078]">(optional)</span><textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} maxLength={1500} placeholder="Add anything Admin should know." className="mt-2 block w-full rounded-2xl border border-[#d8d4c8] bg-[#faf9f5] px-4 py-3 text-base placeholder:text-[#9aa49f]" /></label>
                   <p className="text-xs leading-6 text-[#718078]">Internet is needed only when you submit. Original photo quality will be kept.</p>
                   {alreadySubmitted && <p className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm font-bold text-amber-100">An update for this Tree ID and date is already pending or approved.</p>}
                   <button disabled={submitting || alreadySubmitted} className="mobile-sticky-action w-full rounded-2xl bg-[#073d2e] px-6 py-4 font-black text-white shadow-lg disabled:opacity-40 sm:w-auto">{submitting ? "Sending report…" : "Send Daily Report"}</button>
@@ -265,7 +286,8 @@ export default function CaretakerDailyCarePage() {
 }
 
 function Status({ value }: { value: string }) { const approved = value === "APPROVED"; const rejected = value === "REJECTED"; const tone = approved ? "bg-emerald-100 text-emerald-800" : rejected ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"; return <span className={`rounded-full px-3 py-1 text-[10px] font-black ${tone}`}>{pretty(value)}</span>; }
-function ReportCard({ update, onCorrect }: { update: Row; onCorrect: () => void }) { const rejected = String(update.status) === "REJECTED"; return <article className={`overflow-hidden rounded-2xl border ${rejected ? "border-red-200 bg-red-50" : "border-[#e4dfd3] bg-[#faf9f5]"}`}>{Boolean(update.photo_url) && <div className="relative h-44 w-full sm:h-52"><Image unoptimized fill sizes="(max-width: 768px) 100vw, 640px" src={String(update.photo_url)} alt={`Submitted tree on ${dateText(String(update.observed_on))}`} className="object-cover"/></div>}<div className="p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{dateText(String(update.observed_on))}</p><p className="mt-1 text-xs text-[#718078]">{pretty(String(update.health_status))}</p></div><Status value={String(update.status)} /></div><p className="mt-3 text-sm leading-6 text-[#52655c]">{String(update.notes)}</p>{Boolean(update.review_note) && <div className="mt-3 rounded-xl bg-white/80 p-3 text-xs font-bold leading-5 text-red-800"><span className="block text-[10px] uppercase tracking-[.14em]">Admin correction</span>{String(update.review_note)}</div>}{rejected && <button type="button" onClick={onCorrect} className="mt-4 w-full rounded-xl bg-red-700 px-4 py-3 text-sm font-black text-white">Correct and Resubmit</button>}</div></article>; }
+function ReportCard({ update, onCorrect }: { update: Row; onCorrect: () => void }) { const rejected = String(update.status) === "REJECTED"; return <article className={`overflow-hidden rounded-2xl border ${rejected ? "border-red-200 bg-red-50" : "border-[#e4dfd3] bg-[#faf9f5]"}`}>{Boolean(update.photo_url) && <div className="relative h-44 w-full sm:h-52"><Image unoptimized fill sizes="(max-width: 768px) 100vw, 640px" src={String(update.photo_url)} alt={`Submitted tree on ${dateText(String(update.observed_on))}`} className="object-cover"/></div>}<div className="p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{pretty(String(update.care_period))} · {timeText(String(update.started_at))}</p><p className="mt-1 text-xs text-[#718078]">{dateText(String(update.observed_on))} · {pretty(String(update.health_status))}</p></div><Status value={String(update.status)} /></div><p className="mt-3 text-sm font-black leading-6 text-[#243d33]">{String(update.task_done)}</p>{Boolean(update.notes) && <p className="mt-2 text-sm leading-6 text-[#52655c]">{String(update.notes)}</p>}{Boolean(update.review_note) && <div className="mt-3 rounded-xl bg-white/80 p-3 text-xs font-bold leading-5 text-red-800"><span className="block text-[10px] uppercase tracking-[.14em]">Admin correction</span>{String(update.review_note)}</div>}{rejected && <button type="button" onClick={onCorrect} className="mt-4 w-full rounded-xl bg-red-700 px-4 py-3 text-sm font-black text-white">Correct and Resubmit</button>}</div></article>; }
 function Empty({ text }: { text: string }) { return <p className="rounded-2xl border border-dashed border-[#d8d4c8] bg-[#faf9f5] p-5 text-sm font-bold text-[#718078]">{text}</p>; }
 function pretty(value: string) { return String(value || "PENDING").replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()); }
 function dateText(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" }); }
+function timeText(value: string) { if (!value) return "No time"; const [hour,minute]=value.split(":").map(Number); if(Number.isNaN(hour)) return value; return new Date(2000,0,1,hour,minute||0).toLocaleTimeString("en-PH",{hour:"numeric",minute:"2-digit"}); }

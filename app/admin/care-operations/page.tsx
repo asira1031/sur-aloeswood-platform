@@ -29,7 +29,7 @@ export default function AdminCareOperationsPage() {
       supabase.from("sur_trees").select("id,tree_id,profile_id,species,care_plan,status,general_location,caretaker_profile_id,activated_at,planted_at,created_at").order("created_at", { ascending: false }),
       supabase.from("sur_tree_assignments").select("id,tree_id,caretaker_profile_id,status,task_title,admin_note,assigned_at,updated_at"),
       supabase.from("profiles").select("id,full_name,email,role,account_status").eq("account_status", "ACTIVE").order("full_name"),
-      supabase.from("sur_tree_updates").select("id,tree_id,caretaker_profile_id,observed_on,health_status,notes,photo_path,status,review_note,reviewed_at,created_at").order("created_at", { ascending: false }).limit(500),
+      supabase.from("sur_tree_updates").select("id,tree_id,caretaker_profile_id,observed_on,care_period,started_at,task_done,health_status,notes,photo_path,status,is_planting_record,review_note,reviewed_at,created_at").order("created_at", { ascending: false }).limit(500),
       supabase.from("gardeners").select("email,status").in("status", ["ACTIVE", "APPROVED"]),
     ]);
 
@@ -86,6 +86,17 @@ export default function AdminCareOperationsPage() {
     setLoading(false);
     setMessage(error?.message || "Caretaker assigned. The Tree ID is now in the caretaker's daily task queue.");
     if (!error) { await load(); setMessage("Caretaker assigned successfully."); }
+  }
+
+  async function confirmPlanting(id: unknown) {
+    if (!window.confirm("Confirm this approved evidence proves the tree was planted on its observation date? This record will also be visible to customers without paid care.")) return;
+    setLoading(true);
+    try {
+      const result = await supabase.rpc("sur_confirm_planting_record", {p_update:id});
+      if(result.error) throw new Error(result.error.message);
+      await load();
+    } catch(e) { setMessage(e instanceof Error ? e.message : "Could not confirm planting. Refresh and retry."); }
+    finally { setLoading(false); }
   }
 
   async function review(updateId: unknown, decision: "APPROVED" | "REJECTED") {
@@ -164,10 +175,12 @@ export default function AdminCareOperationsPage() {
               <p className="mt-2 text-sm text-slate-500">Only approved evidence is visible to the customer.</p>
               <div className="mt-5 space-y-4">
                 {selectedUpdates.length === 0 ? <Empty text="No daily update for this Tree ID yet." /> : selectedUpdates.map((update) => <div key={String(update.id)} className="rounded-2xl border border-slate-200 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-black">{dateText(String(update.observed_on))}</p><p className="mt-1 text-xs font-bold text-slate-500">{pretty(String(update.health_status))}</p></div><Status value={String(update.status)} /></div>
-                  <p className="mt-3 text-sm leading-6 text-slate-700">{String(update.notes)}</p>
+                  <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-black">{pretty(String(update.care_period))} · {String(update.started_at || "No time").slice(0,5)}</p><p className="mt-1 text-xs font-bold text-slate-500">{dateText(String(update.observed_on))} · {pretty(String(update.health_status))}</p></div><Status value={String(update.status)} /></div>
+                  <p className="mt-3 text-sm font-black leading-6 text-slate-800">Task: {String(update.task_done)}</p>
+                  {Boolean(update.notes) && <p className="mt-2 text-sm leading-6 text-slate-700">Notes: {String(update.notes)}</p>}
                   {Boolean(update.photo_url) && <a href={String(update.photo_url)} target="_blank" rel="noreferrer" className="mt-3 inline-flex rounded-xl bg-sky-50 px-3 py-2 text-xs font-black text-sky-800">Open original photo (10-minute link)</a>}
                   {update.status === "PENDING_ADMIN_REVIEW" && <div className="mt-4 grid gap-2 sm:flex"><button onClick={() => review(update.id, "APPROVED")} className="mobile-primary-action w-full rounded-xl bg-emerald-700 px-4 py-2 text-xs font-black text-white sm:w-auto">Approve</button><button onClick={() => review(update.id, "REJECTED")} className="mobile-primary-action w-full rounded-xl border border-red-200 px-4 py-2 text-xs font-black text-red-700 sm:w-auto">Request correction</button></div>}
+                  {update.status === "APPROVED" && (update.is_planting_record ? <p className="mt-3 text-sm font-bold text-emerald-700">Confirmed planting record</p> : <button disabled={loading} onClick={() => void confirmPlanting(update.id)} className="mt-3 rounded-xl border px-4 py-3 text-sm font-bold">Confirm as planting evidence</button>)}
                   {Boolean(update.review_note) && <p className="mt-3 text-xs font-bold text-amber-800">Admin note: {String(update.review_note)}</p>}
                 </div>)}
               </div>
