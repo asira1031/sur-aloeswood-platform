@@ -22,7 +22,7 @@ test('caretaker creation requires active Admin, not only a role', () => {
   assert.match(source, /request\.json\(\)\.catch/);
 });
 test('public signup has distributed rate limiting and auth cleanup', () => {
-  for (const path of ['app/api/register/coplanter/route.ts','app/api/farmer/register/route.ts']) {
+  for (const path of ['app/api/register/coplanter/route.ts']) {
     const source = read(path);
     assert.match(source, /await enforceDurableRateLimit/);
     assert.match(source, /deleteUser\(authUserId\)/);

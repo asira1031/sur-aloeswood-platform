@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "name": "TOH Recovery Guard",
+  "applicationBoundary": "direk-tony-sur-aloeswood-platform",
+  "scope": "MVP",
+  "pipeline": ["DETECT", "RECORD", "EXECUTE", "VERIFY", "RECONCILE", "SAFELY_RECOVER", "ESCALATE_IF_UNRESOLVED"],
+  "terminalStates": ["VERIFIED_SUCCESS", "VERIFIED_FAILURE", "ESCALATED"],
+  "safetyRules": [
+    "NO_BLIND_RETRY_FOR_SENSITIVE_WRITES",
+    "NO_FRONTEND_DIRECT_STATUS_MUTATION",
+    "NO_DUPLICATE_EXECUTION",
+    "NO_FOREVER_PENDING_OPERATIONS",
+    "NO_RECOVERY_SUCCESS_WITHOUT_DATABASE_VERIFICATION",
+    "NO_AUTOMATIC_MONEY_KYC_OR_OWNERSHIP_APPROVAL"
+  ],
+  "sensitiveDomains": ["financial", "kyc", "ownership", "identity", "authentication", "permissions", "legal"],
+  "executionPolicy": {
+    "default": "HOLD",
+    "idempotencyKeyRequired": true,
+    "durableOperationRecordRequired": true,
+    "databaseVerificationRequired": true,
+    "humanApprovalRequiredForSensitiveDomains": true,
+    "automaticSensitiveApproval": false,
+    "currentMutationAuthority": "FROZEN"
+  },
+  "recoveryDecision": {
+    "verifiedCompleted": "RECONCILE_AND_CLOSE",
+    "verifiedNotStartedAndSafeIdempotent": "ELIGIBLE_FOR_CONTROLLED_RETRY",
+    "partiallyAppliedOrUnknown": "HOLD_AND_ESCALATE",
+    "sensitiveApprovalRequired": "ESCALATE_TO_AUTHORIZED_HUMAN"
+  }
+}

@@ -46,6 +46,7 @@ export const adminLinks = [
   { href: "/admin/tree-tags", title: "Tree QR Tags", desc: "Print privacy-safe physical QR labels for official Tree IDs" },
   { href: "/admin/guardian", title: "Guardian SQL", desc: "SUR-only guarded database query and repair gateway" },
   { href: "/admin/toh", title: "TOH Intelligence", desc: "Read-only app diagnosis and verified technical guidance" },
+  { href: "/admin/recovery", title: "Recovery Center", desc: "Detect stuck work, verify outcomes, repair safe cases, and escalate sensitive cases" },
   { href: "/admin/coplanters", title: "Co-Planters", desc: "Approve accounts and KYC" },
   { href: "/admin/tree-registry", title: "Tree Registry", desc: "Tree IDs, QR tags, planting and general farm location" },
   { href: "/admin/care-operations", title: "Care Operations", desc: "Assign signed Tree IDs and approve daily caretaker evidence" },

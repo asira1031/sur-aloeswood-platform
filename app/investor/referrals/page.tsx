@@ -1,34 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
+import { getAuthenticatedProfile, type SurProfile } from "@/app/lib/auth/session";
 import { statusClass, type AnyRow } from "@/app/lib/coplanting/ui";
 
 export default function ReferralsPage() {
-  const [email, setEmail] = useState("");
-  const [profile, setProfile] = useState<AnyRow | null>(null);
+  const [profile, setProfile] = useState<SurProfile | null>(null);
   const [referrals, setReferrals] = useState<AnyRow[]>([]);
   const [message, setMessage] = useState("");
 
-  useEffect(() => {
-    const saved = localStorage.getItem("sur_login_email") || "";
-    setEmail(saved);
-    if (saved) loadReferrals(saved);
-  }, []);
-
-  async function loadReferrals(targetEmail = email) {
+  const loadReferrals = useCallback(async () => {
     setMessage("");
-    const cleanEmail = targetEmail.toLowerCase().trim();
-
-    const { data: profileRow, error } = await supabase
-      .from("profiles")
-      .select("id, full_name, email, referral_code, account_status, kyc_status")
-      .eq("email", cleanEmail)
-      .maybeSingle();
-
-    if (error || !profileRow) {
-      setMessage(error?.message || "Profile not found.");
+    const profileRow = await getAuthenticatedProfile();
+    if (!profileRow) {
+      setMessage("Please sign in again.");
       setProfile(null);
       setReferrals([]);
       return;
@@ -42,8 +29,13 @@ export default function ReferralsPage() {
 
     setProfile(profileRow);
     setReferrals((referralRows || []) as AnyRow[]);
-    localStorage.setItem("sur_login_email", cleanEmail);
-  }
+  }, []);
+
+  useEffect(() => {
+    // Initial authenticated data load; the callback resolves asynchronously.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadReferrals();
+  }, [loadReferrals]);
 
   const qualified = useMemo(() => referrals.filter((r) => String(r.account_status).toUpperCase() === "ACTIVE" && String(r.kyc_status).toUpperCase() === "APPROVED"), [referrals]);
   const referralLink = typeof window !== "undefined" && profile?.referral_code ? `${window.location.origin}/register?ref=${profile.referral_code}` : "";

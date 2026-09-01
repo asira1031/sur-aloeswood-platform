@@ -58,21 +58,18 @@ export default function AdminCoPlanterKycDetailPage() {
     setLoading(false);
   }
 
-  async function ensureWallet(targetProfile: AnyRow) {
-    if (wallet) return wallet;
-
-    const { data, error } = await supabase
-      .from("wallets")
-      .insert({
-        profile_id: targetProfile.id,
-        balance: Number(targetProfile.wallet_balance || 0),
-      })
-      .select("id, profile_id, balance, updated_at")
-      .maybeSingle();
-
-    if (error) throw error;
-    setWallet(data as AnyRow);
-    return data;
+  async function runAdminAction(action: string, accountStatus?: string) {
+    if (!profile) throw new Error("Co-planter profile not found.");
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error("Admin login is required.");
+    const response = await fetch(`/api/admin/coplanters/${profile.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action, accountStatus }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to update customer account.");
   }
 
   async function approveKyc() {
@@ -81,25 +78,7 @@ export default function AdminCoPlanterKycDetailPage() {
     setMessage("");
 
     try {
-      await ensureWallet(profile);
-
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          kyc_status: "APPROVED",
-          account_status: String(profile.account_status || "").toUpperCase() === "PENDING" ? "ACTIVE" : profile.account_status,
-          kyc_verified_at: new Date().toISOString(),
-          kyc_updated_at: new Date().toISOString(),
-        })
-        .eq("id", profile.id);
-
-      if (error) throw error;
-
-      await notifyProfile(
-        profile.id,
-        "KYC approved",
-        "Your KYC verification has been approved. Your submitted documents are now verified."
-      );
+      await runAdminAction("APPROVE_KYC");
 
       setMessage("KYC approved. This record is now completed and will leave the Needs Review list.");
       await loadData(profile.id);
@@ -116,21 +95,7 @@ export default function AdminCoPlanterKycDetailPage() {
     setMessage("");
 
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          kyc_status: "REJECTED",
-          kyc_updated_at: new Date().toISOString(),
-        })
-        .eq("id", profile.id);
-
-      if (error) throw error;
-
-      await notifyProfile(
-        profile.id,
-        "KYC rejected",
-        "Your KYC verification was rejected. Please update your details or upload clearer documents for review."
-      );
+      await runAdminAction("REJECT_KYC");
 
       setMessage("KYC rejected. This record is now completed and will leave the Needs Review list.");
       await loadData(profile.id);
@@ -147,23 +112,7 @@ export default function AdminCoPlanterKycDetailPage() {
     setMessage("");
 
     try {
-      await ensureWallet(profile);
-
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          account_status: accountStatus,
-          membership_status: accountStatus === "ACTIVE" ? profile.membership_status || "PENDING" : profile.membership_status,
-        })
-        .eq("id", profile.id);
-
-      if (error) throw error;
-
-      await notifyProfile(
-        profile.id,
-        `Account ${accountStatus.toLowerCase()}`,
-        `Your co-planter account is now ${accountStatus}.`
-      );
+      await runAdminAction("SET_ACCOUNT_STATUS", accountStatus);
 
       setMessage(`Account updated to ${accountStatus}.`);
       await loadData(profile.id);
@@ -172,15 +121,6 @@ export default function AdminCoPlanterKycDetailPage() {
     }
 
     setBusy(false);
-  }
-
-  async function notifyProfile(profileId: string, title: string, body: string) {
-    await supabase.from("notifications").insert({
-      profile_id: profileId,
-      title,
-      message: body,
-      is_read: false,
-    });
   }
 
   const kycFiles = useMemo(() => (profile ? getKycFiles(profile) : []), [profile]);

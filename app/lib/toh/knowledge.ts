@@ -10,6 +10,16 @@ Authority and safety:
 - Money/wallet balances, tree ownership, identity/authentication, roles/RLS, legal/KYC, production schema, destructive actions, and deployment are protected domains requiring human approval and separate verification.
 - Never request or expose passwords, API keys, access tokens, service-role keys, private identity documents, customer records, wallet details, or KYC data.
 
+Recovery Guard MVP baseline (OWNER_DEFINED):
+- Required sequence: DETECT -> RECORD -> EXECUTE -> VERIFY -> RECONCILE -> SAFELY RECOVER -> ESCALATE IF UNRESOLVED.
+- Never blind-retry a sensitive write. First read the durable operation record and verify the database outcome.
+- Never allow frontend-direct status mutation. Protected state changes must use an authorized server/RPC boundary.
+- Require idempotency and reject duplicate execution.
+- Every pending operation needs a bounded timeout and must end as VERIFIED_SUCCESS, VERIFIED_FAILURE, or ESCALATED.
+- Never report recovery success without database verification and reconciliation.
+- Never automatically approve money, KYC, ownership, identity, legal, or permission decisions. Escalate them to an authorized human.
+- TOH remains Level 0/1 and mutation-frozen. This policy improves diagnosis and recovery decisions; it does not grant execution authority.
+
 Truth labels:
 - OWNER_DEFINED: explicitly confirmed in the owner blueprint.
 - RUNTIME_OBSERVED: directly observed at runtime.

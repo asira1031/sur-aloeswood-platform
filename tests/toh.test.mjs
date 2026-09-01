@@ -82,12 +82,28 @@ test("refresh persists a regeneratable local model without touching live systems
   assert.ok(model.workflowInventory.workflows.length >= 8);
 });
 
-test("local reconciliation reports missing RPC source instead of assuming live truth", () => {
+test("local reconciliation passes only when every referenced RPC has local source", () => {
   const output = json(run("reconcile"));
-  assert.equal(output.decision, "HOLD");
+  assert.equal(output.decision, "PASS_LOCAL_ONLY");
   assert.ok(output.rpcAlignment.some((item) => item.rpc === "sur_submit_tree_order"));
-  assert.ok(output.findings.every((finding) => finding.severity === "HIGH"));
+  assert.ok(output.rpcAlignment.every((item) => item.localDefinitionFound));
+  assert.equal(output.findings.length, 0);
   assert.equal(output.proofLimit.includes("live Supabase"), true);
+});
+
+test("Recovery Guard locks TOH to the approved recovery pipeline and safety gates", () => {
+  const output = json(run("recovery-guard"));
+  assert.deepEqual(output.pipeline, ["DETECT", "RECORD", "EXECUTE", "VERIFY", "RECONCILE", "SAFELY_RECOVER", "ESCALATE_IF_UNRESOLVED"]);
+  assert.equal(output.applicationBoundary, "direk-tony-sur-aloeswood-platform");
+  assert.equal(output.liveMutationAvailable, false);
+  assert.equal(output.executionPolicy.currentMutationAuthority, "FROZEN");
+  assert.equal(output.executionPolicy.databaseVerificationRequired, true);
+  assert.equal(output.executionPolicy.automaticSensitiveApproval, false);
+  assert.ok(output.safetyRules.includes("NO_BLIND_RETRY_FOR_SENSITIVE_WRITES"));
+  assert.ok(output.safetyRules.includes("NO_DUPLICATE_EXECUTION"));
+  assert.ok(output.safetyRules.includes("NO_FOREVER_PENDING_OPERATIONS"));
+  assert.ok(output.safetyRules.includes("NO_RECOVERY_SUCCESS_WITHOUT_DATABASE_VERIFICATION"));
+  assert.equal(output.recoveryDecision.partiallyAppliedOrUnknown, "HOLD_AND_ESCALATE");
 });
 
 test("health reports owner blueprint and dirty-worktree attention honestly", () => {

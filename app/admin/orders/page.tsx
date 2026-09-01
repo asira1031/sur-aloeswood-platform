@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import AdminCarePayments from "@/app/components/AdminCarePayments";
 import { peso } from "@/app/lib/business/rules";
 import { supabase } from "@/app/lib/supabase/client";
 
@@ -119,6 +120,7 @@ export default function AdminOrdersPage() {
           </p>
         </header>
 
+        <AdminCarePayments />
         {message && (
           <p aria-live="polite" className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">
             {message}

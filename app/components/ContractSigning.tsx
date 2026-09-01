@@ -23,6 +23,12 @@ type ContractRecord = {
   customer_signed_at: string | null;
   customer_signature: string | null;
   farm_signed_copy_path: string | null;
+  template_path: string | null;
+  identity_document_path: string | null;
+  sent_at: string | null;
+  notarization_status: string | null;
+  notarized_copy_path: string | null;
+  notarized_at: string | null;
   created_at: string;
   tree: TreeRecord | null;
 };
@@ -50,7 +56,7 @@ export default function ContractSigning({ contractId }: { contractId: string }) 
     setLoading(true);
     const { data, error } = await supabase
       .from("sur_contracts")
-      .select("id,version,legal_name,status,customer_signed_at,customer_signature,farm_signed_copy_path,created_at,sur_trees(id,tree_id,species,care_plan,status,general_location,planted_at,activated_at)")
+      .select("id,version,legal_name,status,customer_signed_at,customer_signature,farm_signed_copy_path,template_path,identity_document_path,sent_at,notarization_status,notarized_copy_path,notarized_at,created_at,sur_trees(id,tree_id,species,care_plan,status,general_location,planted_at,activated_at)")
       .eq("id", contractId)
       .maybeSingle();
 
@@ -107,6 +113,13 @@ export default function ContractSigning({ contractId }: { contractId: string }) 
     await loadContract();
   }
 
+  async function openFinalCopy() {
+    if (!contract?.notarized_copy_path) return;
+    const result = await supabase.storage.from("sur-contract-documents").createSignedUrl(contract.notarized_copy_path, 300);
+    if (result.error) { setMessage(result.error.message); return; }
+    window.open(result.data.signedUrl, "_blank", "noopener,noreferrer");
+  }
+
   if (loading) {
     return <StateCard title="Opening your contract" text="Verifying ownership and loading the official tree record…" />;
   }
@@ -158,6 +171,7 @@ export default function ContractSigning({ contractId }: { contractId: string }) 
               <Clause number="6" title="Money records">Maya payments, banking, and withdrawals happen through approved external channels. The app shows verified balances, transaction history, receipts, and status; it is not itself a bank.</Clause>
               <Clause number="7" title="Support and documents">Questions, corrections, identity files, certificates, DENR copies, and transaction proof are handled through Agarwood Support Team and the applicable legal workflow.</Clause>
             </ol>
+            <a href={contract.template_path || "/legal/sur-tree-agreement-dummy-v1.pdf"} target="_blank" rel="noreferrer" className="mt-5 inline-flex rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-black">Open exact contract copy</a>
           </section>
 
           {pending ? (
@@ -197,6 +211,8 @@ export default function ContractSigning({ contractId }: { contractId: string }) 
                 <p className="mt-2 text-sm font-bold text-emerald-900/65">Signed {dateTime(contract.customer_signed_at)}</p>
               </div>
               <p className="mt-4 text-sm leading-7 text-slate-600">Your Tree ID is active. The farm and admin can now continue assignment, QR tagging, planting, and approved update workflows.</p>
+              {contract.notarization_status === "AWAITING_NOTARY" && <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">Your signature is complete. Admin is arranging notarization and will upload the final shared copy here.</p>}
+              {contract.notarized_copy_path && <button type="button" onClick={() => void openFinalCopy()} className="mt-4 rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-black text-white">Open final notarized PDF</button>}
               {message && <p className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-900">{message}</p>}
             </section>
           )}

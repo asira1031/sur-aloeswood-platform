@@ -39,11 +39,11 @@ export default function Home() {
       </header>
 
       <section className="relative overflow-hidden border-b border-[#173329]/10">
-        <div className="absolute inset-y-0 right-0 hidden w-[42%] bg-[#dce6d8] lg:block" />
-        <div className="relative mx-auto grid max-w-7xl gap-12 px-5 py-16 sm:px-8 sm:py-24 lg:grid-cols-[1.08fr_.92fr] lg:px-12 lg:py-28">
-          <div className="max-w-2xl">
+        <div className="absolute inset-y-0 right-0 hidden w-[42%] bg-[#dce6d8] xl:block" />
+        <div className="relative mx-auto grid w-full max-w-7xl gap-10 px-5 py-12 sm:gap-12 sm:px-8 sm:py-20 lg:px-12 xl:grid-cols-[1.08fr_.92fr] xl:items-center xl:py-28">
+          <div className="min-w-0 max-w-2xl">
             <p className="mb-6 inline-flex rounded-full border border-[#173329]/15 bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-[#446455]">One tree. One identity. One clear record.</p>
-            <h1 className="text-5xl font-black leading-[1.02] tracking-[-0.045em] text-[#122b22] sm:text-6xl lg:text-7xl">
+            <h1 className="text-4xl font-black leading-[1.02] tracking-[-0.045em] text-[#122b22] min-[390px]:text-5xl sm:text-6xl xl:text-7xl">
               Own an agarwood tree. <span className="text-[#9a7137]">We handle the care.</span>
             </h1>
             <p className="mt-7 max-w-xl text-lg leading-8 text-[#50645a]">Buy a tree, receive your contract, and follow its documented care journey from planting to its future sale—all through one private account.</p>
@@ -54,8 +54,8 @@ export default function Home() {
             <p className="mt-5 text-sm font-semibold text-[#66786f]">Tree package from ₱25,000 • Care options shown before payment</p>
           </div>
 
-          <div className="relative min-h-[440px] overflow-hidden rounded-[2.25rem] bg-[#173329] shadow-2xl lg:min-h-[560px]">
-            <Image src="/sur-hero-tree-v1.png" alt="A young agarwood tree with its physical QR identification tag" fill priority className="object-cover" sizes="(max-width: 1024px) 100vw, 46vw" />
+          <div className="relative min-h-[390px] w-full min-w-0 overflow-hidden rounded-[2.25rem] bg-[#173329] shadow-2xl sm:min-h-[500px] xl:min-h-[560px]">
+            <Image src="/sur-hero-tree-v1.png" alt="A young agarwood tree with its physical QR identification tag" fill priority className="object-cover" sizes="(max-width: 1279px) 100vw, 46vw" />
             <div className="absolute inset-0 bg-gradient-to-t from-[#10271f]/85 via-transparent to-transparent" />
             <div className="absolute inset-x-5 bottom-5 rounded-3xl border border-white/20 bg-[#173329]/90 p-5 text-white backdrop-blur sm:inset-x-7 sm:bottom-7 sm:p-6">
               <div className="flex items-center gap-4"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#d9ad60] text-xl text-[#173329]">✓</span><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#b9cbbf]">Physical + digital identity</p><h2 className="mt-1 text-xl font-black">Every approved tree gets its own QR tag.</h2></div></div>

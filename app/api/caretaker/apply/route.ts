@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
   const rate = await enforceDurableRateLimit(request, "caretaker-apply", 3, 60 * 60);
   if (rate.unavailable) return NextResponse.json({ error: "Applications are temporarily unavailable. Please try again later." }, { status: 503, headers: { "Retry-After": "60" } });
   if (!rate.allowed) return NextResponse.json({ error: "Too many applications. Try again later." }, { status: 429 });
-  if (!url || !anon || !service) return NextResponse.json({ error: "Caretaker application is not configured." }, { status: 500 });
+  if (url !== "https://dvidrbhfzzhgwyempgtu.supabase.co" || !anon || !service) return NextResponse.json({ error: "Caretaker application is not configured." }, { status: 500 });
 
   const authorization = request.headers.get("authorization") || "";
   const userClient = createClient(url, anon, { global: { headers: { Authorization: authorization } } });
@@ -23,12 +23,11 @@ export async function POST(request: NextRequest) {
   const mobile = String(body?.mobile || "").trim();
   if (!resumeUrl) return NextResponse.json({ error: "Caretaker experience/resume file is required." }, { status: 400 });
   if (typeof body?.resumeUrl !== "string" || resumeUrl.length > 2048 || mobile.length > 40) return NextResponse.json({ error: "Invalid application details." }, { status: 400 });
-  try {
-    const document = new URL(resumeUrl);
-    if (document.origin !== "https://dvidrbhfzzhgwyempgtu.supabase.co" || !document.pathname.startsWith("/storage/v1/object/public/farmer-resumes/") || document.search || document.hash) throw new Error("Invalid document");
-  } catch {
-    return NextResponse.json({ error: "Upload your caretaker document through your account first." }, { status: 400 });
+  if (!resumeUrl.startsWith(user.id + "/") || resumeUrl.split("/").some(part => !part || part === "." || part === "..") || /[:\\\\]/.test(resumeUrl)) {
+    return NextResponse.json({ error: "Upload your private caretaker document through your account first." }, { status: 400 });
   }
+  const stored = await userClient.storage.from("farmer-resumes").info(resumeUrl);
+  if (stored.error || !stored.data) return NextResponse.json({ error: "Resume upload was not found or is not accessible." }, { status: 400 });
 
   const admin = createClient(url, service, { auth: { autoRefreshToken: false, persistSession: false } });
   const email = user.email.toLowerCase().trim();
@@ -42,7 +41,10 @@ export async function POST(request: NextRequest) {
   if (findError) return NextResponse.json({ error: findError.message }, { status: 500 });
   if (["ACTIVE", "APPROVED"].includes(String(existing?.status || "").toUpperCase())) return NextResponse.json({ ok: true, status: "ACTIVE", message: "Caretaker Mode is already active." });
 
-  const save = existing ? await admin.from("gardeners").update(payload).eq("id", existing.id) : await admin.from("gardeners").insert(payload);
+  const save = existing
+    ? await admin.from("gardeners").update(payload).eq("id", existing.id).in("status", ["PENDING", "REJECTED"]).select("id")
+    : await admin.from("gardeners").insert(payload).select("id");
   if (save.error) return NextResponse.json({ error: save.error.message }, { status: 500 });
+  if (!save.data?.length) return NextResponse.json({ error: "Application status changed. Refresh before retrying." }, { status: 409 });
   return NextResponse.json({ ok: true, status: "PENDING", message: "Caretaker verification submitted for Admin review." });
 }

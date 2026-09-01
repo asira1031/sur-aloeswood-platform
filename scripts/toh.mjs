@@ -62,6 +62,9 @@ async function main() {
     case "reconcile":
       printJson(reconcileLocalModel());
       return;
+    case "recovery-guard":
+      printJson(recoveryGuardPolicy());
+      return;
     case "health":
       printJson(localHealth());
       return;
@@ -110,10 +113,22 @@ function refreshSystemModel() {
     workflowInventory: loadTohData("workflows.json"),
     invariantInventory: invariantReport(),
     incidentMemory: loadTohData("incidents.json"),
+    recoveryGuard: recoveryGuardPolicy(),
     capabilityAudit: capabilityAudit(),
   };
   writeFileSync(output, `${JSON.stringify(model, null, 2)}\n`, "utf8");
   printJson({ assistant: "TOH", action: "LOCAL_MODEL_REFRESH", output: toRepoPath(output), liveSystemsTouched: false });
+}
+
+function recoveryGuardPolicy() {
+  const policy = loadTohData("recovery-guard.json");
+  return {
+    assistant: "TOH",
+    mode: "GUARDED_RECOVERY_POLICY",
+    ...policy,
+    liveMutationAvailable: false,
+    proofLimit: "This policy defines deterministic recovery gates; it does not prove a live operation succeeded or grant TOH mutation authority."
+  };
 }
 
 function traceWorkflow(workflowId) {
@@ -844,6 +859,7 @@ Commands:
   npm.cmd run toh -- gate financial high false false false unknown
   npm.cmd run toh -- audit
   npm.cmd run toh -- reconcile
+  npm.cmd run toh -- recovery-guard
   npm.cmd run toh -- health
   npm.cmd run toh -- snapshot before-change
   npm.cmd run toh -- compare before-change after-change
