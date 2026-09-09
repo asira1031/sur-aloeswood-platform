@@ -50,7 +50,7 @@ export default function AdminCoPlantersPage() {
     <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
       <div className="mx-auto w-full max-w-[1500px] px-4 py-4 lg:px-6">
         <section className="relative overflow-hidden rounded-[2rem] border border-white/20 p-6 shadow-sm lg:p-8">
-          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/forest-bg.jpg')" }} />
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/app-assets/sur-botanical-maximal-v1.png')" }} />
           <div className="absolute inset-0 bg-gradient-to-r from-green-950/90 via-green-900/66 to-green-950/18" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/10" />
 
@@ -291,7 +291,7 @@ function getKycFiles(profile: AnyRow) {
   return [
     { label: "Valid ID", url: firstText(profile, ["kyc_id_url", "kyc_document_url", "valid_id_url", "id_document_url", "government_id_url"]) },
     { label: "Selfie / Photo", url: firstText(profile, ["kyc_selfie_url", "selfie_url", "kyc_photo_url", "face_photo_url"]) },
-    { label: "Extra Document", url: firstText(profile, ["kyc_extra_url", "proof_of_address_url", "supporting_document_url"]) },
+    { label: "Valid ID — Back", url: firstText(profile, ["kyc_extra_url", "proof_of_address_url", "supporting_document_url"]) },
   ].filter((file) => file.url);
 }
 

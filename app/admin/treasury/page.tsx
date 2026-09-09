@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import WithdrawalReceipt from "@/app/components/WithdrawalReceipt";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
-import { calculatePlatformFee } from "@/app/lib/finance/fee-distribution";
+
 
 type AnyRow = Record<string, any>;
 
@@ -32,16 +33,12 @@ function profileName(profile?: AnyRow | null) {
 }
 
 export default function AdminTreasuryPage() {
-  const [adminEmail, setAdminEmail] = useState("");
   const [profiles, setProfiles] = useState<AnyRow[]>([]);
   const [wallets, setWallets] = useState<AnyRow[]>([]);
-  const [cashins, setCashins] = useState<AnyRow[]>([]);
   const [withdrawals, setWithdrawals] = useState<AnyRow[]>([]);
   const [transactions, setTransactions] = useState<AnyRow[]>([]);
-  const [selectedCashin, setSelectedCashin] = useState<AnyRow | null>(null);
   const [selectedWithdrawal, setSelectedWithdrawal] = useState<AnyRow | null>(null);
-  const [filter, setFilter] = useState("PENDING_VERIFICATION");
-  const [tab, setTab] = useState<"CASHIN" | "WITHDRAW">("CASHIN");
+  const [filter, setFilter] = useState("PENDING_REVIEW");
   const [search, setSearch] = useState("");
   const [busyId, setBusyId] = useState("");
   const [message, setMessage] = useState("");
@@ -50,20 +47,14 @@ export default function AdminTreasuryPage() {
   const [withdrawalProof, setWithdrawalProof] = useState<File | null>(null);
 
   useEffect(() => {
-    setAdminEmail(localStorage.getItem("sur_login_email") || "");
     loadTreasury();
   }, []);
 
   async function loadTreasury() {
-    setMessage("");
 
-    const [profileResult, walletResult, cashinResult, withdrawalResult, txResult] = await Promise.all([
+    const [profileResult, walletResult, withdrawalResult, txResult] = await Promise.all([
       supabase.from("profiles").select("id, full_name, email, wallet_balance, account_status, kyc_status").limit(1000),
       supabase.from("wallets").select("id, profile_id, balance, updated_at"),
-      supabase
-        .from("cashin_requests")
-        .select("id, profile_id, amount, reference_no, description, status, payment_channel, sender_name, sender_account, proof_url, platform_fee, net_amount, approved_at, rejected_at, created_at")
-        .order("created_at", { ascending: false }),
       supabase
         .from("withdrawal_requests")
         .select("id, profile_id, amount, platform_fee, net_amount, payout_method, payout_account_name, payout_account_number, status, request_reference, settlement_reference, proof_url, receipt_url, admin_notes, requested_at, settled_at, rejected_at")
@@ -71,19 +62,16 @@ export default function AdminTreasuryPage() {
       supabase.from("wallet_transactions").select("id, profile_id, transaction_type, amount, description, status, created_at").order("created_at", { ascending: false }).limit(500),
     ]);
 
-    if (profileResult.error || walletResult.error || cashinResult.error || withdrawalResult.error || txResult.error) {
-      setMessage(profileResult.error?.message || walletResult.error?.message || cashinResult.error?.message || withdrawalResult.error?.message || txResult.error?.message || "Unable to load treasury.");
+    if (profileResult.error || walletResult.error || withdrawalResult.error || txResult.error) {
+      setMessage(profileResult.error?.message || walletResult.error?.message || withdrawalResult.error?.message || txResult.error?.message || "Unable to load treasury.");
       return;
     }
 
-    const cashinRows = (cashinResult.data || []) as AnyRow[];
     const withdrawalRows = (withdrawalResult.data || []) as AnyRow[];
     setProfiles((profileResult.data || []) as AnyRow[]);
     setWallets((walletResult.data || []) as AnyRow[]);
-    setCashins(cashinRows);
     setWithdrawals(withdrawalRows);
     setTransactions((txResult.data || []) as AnyRow[]);
-    setSelectedCashin((current) => cashinRows.find((row) => row.id === current?.id) || cashinRows[0] || null);
     setSelectedWithdrawal((current) => withdrawalRows.find((row) => row.id === current?.id) || withdrawalRows[0] || null);
   }
 
@@ -95,66 +83,14 @@ export default function AdminTreasuryPage() {
     return wallets.find((wallet) => wallet.profile_id === profileId) || null;
   }
 
-  async function verifyCashin(row: AnyRow) {
-    setBusyId(row.id);
-    setMessage("");
-
-    if (!row.proof_url) {
-      setMessage("Cannot verify cash-in without payment proof photo.");
-      setBusyId("");
-      return;
-    }
-
-    const cleanAdminEmail = adminEmail || localStorage.getItem("sur_login_email") || "";
-    const { error } = await supabase.rpc("sur_admin_verify_cashin_by_email", {
-      p_admin_email: cleanAdminEmail,
-      p_cashin_request_id: row.id,
-    });
-
-    if (error) {
-      setMessage(error.message);
-      setBusyId("");
-      return;
-    }
-
-    setMessage("Cash-in verified. Full amount credited to the customer wallet.");
-    await loadTreasury();
-    setBusyId("");
-  }
-
-  async function rejectCashin(row: AnyRow) {
-    setBusyId(row.id);
-    setMessage("");
-
-    const reason = window.prompt("Reason for rejecting this cash-in?", "Unable to verify real payment.");
-    if (reason === null) {
-      setBusyId("");
-      return;
-    }
-
-    const cleanAdminEmail = adminEmail || localStorage.getItem("sur_login_email") || "";
-    const { error } = await supabase.rpc("sur_admin_reject_cashin_by_email", {
-      p_admin_email: cleanAdminEmail,
-      p_cashin_request_id: row.id,
-      p_reason: reason,
-    });
-
-    if (error) {
-      setMessage(error.message);
-      setBusyId("");
-      return;
-    }
-
-    setMessage("Cash-in rejected and customer was notified.");
-    await loadTreasury();
-    setBusyId("");
-  }
-
   function onWithdrawalProofChange(event: ChangeEvent<HTMLInputElement>) {
     setWithdrawalProof(event.target.files?.[0] || null);
   }
 
   async function uploadWithdrawalProof(row: AnyRow, file: File) {
+    if (!["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(file.type) || file.size > 10 * 1024 * 1024 || file.size === 0) {
+      throw new Error("Choose a JPG, PNG, WebP or PDF file up to 10 MB.");
+    }
     const ext = file.name.split(".").pop() || "jpg";
     const safeRef = String(row.request_reference || row.id).replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 60);
     const path = `${row.profile_id}/${Date.now()}-${safeRef}.${ext}`;
@@ -166,11 +102,11 @@ export default function AdminTreasuryPage() {
 
     if (uploadError) throw uploadError;
 
-    const { data } = supabase.storage.from(WITHDRAWAL_BUCKET).getPublicUrl(path);
-    return data.publicUrl;
+    return path;
   }
 
   async function settleWithdrawal(row: AnyRow) {
+    if (busyId || normalize(row.status) !== "PENDING_REVIEW") return;
     setBusyId(row.id);
     setMessage("");
 
@@ -188,9 +124,7 @@ export default function AdminTreasuryPage() {
 
     try {
       const proofUrl = await uploadWithdrawalProof(row, withdrawalProof);
-      const cleanAdminEmail = adminEmail || localStorage.getItem("sur_login_email") || "";
-      const { error } = await supabase.rpc("sur_admin_settle_withdrawal_by_email", {
-        p_admin_email: cleanAdminEmail,
+      const { error } = await supabase.rpc("sur_admin_settle_withdrawal", {
         p_withdrawal_request_id: row.id,
         p_settlement_reference: settlementReference.trim(),
         p_proof_url: proofUrl,
@@ -212,6 +146,7 @@ export default function AdminTreasuryPage() {
   }
 
   async function rejectWithdrawal(row: AnyRow) {
+    if (busyId || normalize(row.status) !== "PENDING_REVIEW") return;
     setBusyId(row.id);
     setMessage("");
 
@@ -221,9 +156,7 @@ export default function AdminTreasuryPage() {
       return;
     }
 
-    const cleanAdminEmail = adminEmail || localStorage.getItem("sur_login_email") || "";
-    const { error } = await supabase.rpc("sur_admin_reject_withdrawal_by_email", {
-      p_admin_email: cleanAdminEmail,
+    const { error } = await supabase.rpc("sur_admin_reject_withdrawal", {
       p_withdrawal_request_id: row.id,
       p_reason: reason,
     });
@@ -239,41 +172,29 @@ export default function AdminTreasuryPage() {
     setBusyId("");
   }
 
-  const filteredCashins = useMemo(() => {
-    const keyword = search.toLowerCase().trim();
-    return cashins.filter((row) => {
-      const profile = getProfile(row.profile_id);
-      const status = normalize(row.status);
-      const statusOk = filter === "ALL" || status === filter || (filter === "PENDING_VERIFICATION" && status === "PENDING");
-      const text = `${JSON.stringify(row)} ${profile?.full_name || ""} ${profile?.email || ""}`.toLowerCase();
-      return statusOk && (!keyword || text.includes(keyword));
-    });
-  }, [cashins, profiles, filter, search]);
-
   const filteredWithdrawals = useMemo(() => {
     const keyword = search.toLowerCase().trim();
     return withdrawals.filter((row) => {
       const profile = getProfile(row.profile_id);
       const status = normalize(row.status);
-      const statusOk = filter === "ALL" || status === filter || (filter === "PENDING_VERIFICATION" && status === "PENDING_REVIEW");
+      const statusOk = filter === "ALL" || status === filter || (filter === "PENDING_REVIEW" && status === "PENDING_REVIEW");
       const text = `${JSON.stringify(row)} ${profile?.full_name || ""} ${profile?.email || ""}`.toLowerCase();
       return statusOk && (!keyword || text.includes(keyword));
     });
   }, [withdrawals, profiles, filter, search]);
 
   const walletTotal = wallets.reduce((sum, row) => sum + Number(row.balance || 0), 0);
-  const pendingCashinTotal = cashins.filter((row) => ["PENDING", "PENDING_VERIFICATION"].includes(normalize(row.status))).reduce((sum, row) => sum + Number(row.amount || 0), 0);
   const pendingWithdrawTotal = withdrawals.filter((row) => ["PENDING", "PENDING_REVIEW"].includes(normalize(row.status))).reduce((sum, row) => sum + Number(row.amount || 0), 0);
-  const selected = tab === "CASHIN" ? selectedCashin : selectedWithdrawal;
+  const selected = selectedWithdrawal;
   const selectedProfile = selected ? getProfile(selected.profile_id) : null;
   const selectedWallet = selected ? getWallet(selected.profile_id) : null;
-  const feeQuote = selected ? calculatePlatformFee(Number(selected.amount || 0)) : null;
+  const feeQuote = selected ? { gross: selected.amount, fee: selected.platform_fee, net: selected.net_amount } : null;
 
   return (
     <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
       <div className="mx-auto w-full max-w-[1500px] px-4 py-4 lg:px-6">
         <section className="relative overflow-hidden rounded-[2rem] border border-white/20 p-6 shadow-sm lg:p-8">
-          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/forest-bg.jpg')" }} />
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/app-assets/sur-botanical-maximal-v1.png')" }} />
           <div className="absolute inset-0 bg-gradient-to-r from-green-950/90 via-green-900/66 to-green-950/18" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/10" />
 
@@ -282,7 +203,7 @@ export default function AdminTreasuryPage() {
               <p className="text-xs font-black uppercase tracking-[0.32em] text-white/75">SUR Aloeswood Admin</p>
               <h1 className="mt-4 max-w-3xl text-4xl font-black leading-tight text-white lg:text-6xl">Treasury Center</h1>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-white/78 lg:text-base">
-                Manual cash-in verification, withdrawal checking, wallet credit control, and withdrawal fee ledger.
+                Withdrawal review, external payout proof, and wallet balances.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -291,9 +212,8 @@ export default function AdminTreasuryPage() {
             </div>
           </div>
 
-          <div className="relative z-10 mt-8 grid gap-3 md:grid-cols-4">
+          <div className="relative z-10 mt-8 grid gap-3 md:grid-cols-3">
             <HeroStat label="Wallet Balances" value={peso(walletTotal)} />
-            <HeroStat label="Pending Cash-In" value={peso(pendingCashinTotal)} />
             <HeroStat label="Pending Withdraw" value={peso(pendingWithdrawTotal)} />
             <HeroStat label="Wallet TX" value={String(transactions.length)} />
           </div>
@@ -305,35 +225,30 @@ export default function AdminTreasuryPage() {
           <section className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 className="text-2xl font-black text-slate-950">{tab === "CASHIN" ? "Cash-In Verification" : "Withdrawal Review"}</h2>
-                <p className="mt-1 text-sm text-slate-600">Open proof photo first before approval. Screenshot alone does not move money unless admin verifies.</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button onClick={() => setTab("CASHIN")} className={`rounded-2xl px-4 py-3 text-xs font-black ${tab === "CASHIN" ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-700"}`}>Cash-In</button>
-                <button onClick={() => setTab("WITHDRAW")} className={`rounded-2xl px-4 py-3 text-xs font-black ${tab === "WITHDRAW" ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-700"}`}>Withdraw</button>
+                <h2 className="text-2xl font-black text-slate-950">Withdrawal Review</h2>
+                <p className="mt-1 text-sm text-slate-600">Send the payout externally, then record its reference and proof.</p>
               </div>
             </div>
 
             <div className="mt-5 grid gap-2 sm:grid-cols-2">
               <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search customer, ref, sender" className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
               <select value={filter} onChange={(event) => setFilter(event.target.value)} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400">
-                <option value="PENDING_VERIFICATION">Pending</option>
+                <option value="PENDING_REVIEW">Pending</option>
                 <option value="ALL">All</option>
-                <option value="APPROVED">Approved</option>
                 <option value="SETTLED">Settled</option>
                 <option value="REJECTED">Rejected</option>
               </select>
             </div>
 
             <div className="mt-5 space-y-3">
-              {(tab === "CASHIN" ? filteredCashins : filteredWithdrawals).length === 0 ? (
+              {filteredWithdrawals.length === 0 ? (
                 <Empty text="No records found." />
               ) : (
-                (tab === "CASHIN" ? filteredCashins : filteredWithdrawals).map((row) => {
+                filteredWithdrawals.map((row) => {
                   const profile = getProfile(row.profile_id);
                   const active = selected?.id === row.id;
                   return (
-                    <button key={row.id} onClick={() => tab === "CASHIN" ? setSelectedCashin(row) : setSelectedWithdrawal(row)} className={`w-full rounded-2xl border p-5 text-left transition ${active ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-slate-50 hover:border-emerald-200"}`}>
+                    <button key={row.id} disabled={Boolean(busyId)} onClick={() => { setSelectedWithdrawal(row); setSettlementReference(""); setSettlementNotes(""); setWithdrawalProof(null); }} className={`w-full rounded-2xl border p-5 text-left transition ${active ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-slate-50 hover:border-emerald-200"}`}>
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="text-lg font-black text-slate-950">{profileName(profile)}</p>
@@ -353,7 +268,7 @@ export default function AdminTreasuryPage() {
           </section>
 
           <section className="rounded-[2rem] border border-emerald-100 bg-white p-5 shadow-sm lg:p-6">
-            <h2 className="text-2xl font-black text-slate-950">{tab === "CASHIN" ? "Cash-In Detail" : "Withdrawal Detail"}</h2>
+            <h2 className="text-2xl font-black text-slate-950">Withdrawal Detail</h2>
             {!selected ? (
               <div className="mt-5"><Empty text="Select a record first." /></div>
             ) : (
@@ -365,33 +280,13 @@ export default function AdminTreasuryPage() {
                   <Info label="Wallet Balance" value={peso(selectedWallet?.balance)} />
                   <Info label="Status" value={selected.status || "PENDING"} />
                   <Info label="Date" value={formatDate(selected.created_at || selected.requested_at)} />
-                  {tab === "CASHIN" ? (
-                    <>
-                      <Info label="Channel" value={selected.payment_channel || "-"} />
-                      <Info label="Reference" value={selected.reference_no || "-"} />
-                      <Info label="Sender Name" value={selected.sender_name || "-"} />
-                      <Info label="Sender Account" value={selected.sender_account || "-"} />
-                    </>
-                  ) : (
                     <>
                       <Info label="Payout Method" value={selected.payout_method || "-"} />
                       <Info label="Payout Account" value={`${selected.payout_account_name || "-"} / ${selected.payout_account_number || "-"}`} />
                     </>
-                  )}
+
                 </div>
 
-                {tab === "CASHIN" ? (
-                  <div className="mt-5 rounded-3xl border border-emerald-100 bg-emerald-50/80 p-4">
-                    <p className="text-sm font-black text-slate-950">Cash-In Credit</p>
-                    <p className="mt-1 text-xs font-bold leading-6 text-slate-600">
-                      Cash-in has no platform fee. After admin verifies the proof, the full amount is credited to the customer wallet.
-                    </p>
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      <Info label="Verified Cash-In" value={peso(selected.amount)} />
-                      <Info label="Wallet Credit" value={peso(selected.amount)} />
-                    </div>
-                  </div>
-                ) : (
                   <div className="mt-5 rounded-3xl border border-amber-100 bg-amber-50/80 p-4">
                     <p className="text-sm font-black text-slate-950">Platform Fee to TDI</p>
                     <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -400,37 +295,15 @@ export default function AdminTreasuryPage() {
                       <Info label="Net Payout" value={peso(feeQuote?.net)} />
                     </div>
                   </div>
-                )}
+
 
                 <div className="mt-5 rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-sm font-black text-slate-950">{tab === "CASHIN" ? "Payment Proof Photo" : "Settlement Proof Photo"}</p>
-                  {selected.proof_url ? (
-                    <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                      {String(selected.proof_url).toLowerCase().includes(".pdf") ? (
-                        <a href={selected.proof_url} target="_blank" className="block p-5 text-sm font-black text-emerald-700 underline">Open PDF proof</a>
-                      ) : (
-                        <a href={selected.proof_url} target="_blank">
-                          <img src={selected.proof_url} alt="Payment proof" className="max-h-[420px] w-full object-contain" />
-                        </a>
-                      )}
-                    </div>
-                  ) : (
-                    <Empty text="No proof uploaded yet." />
-                  )}
+                  <p className="text-sm font-black text-slate-950">Settlement Proof Photo</p>
+                  {selected.proof_url || selected.receipt_url ? <WithdrawalReceipt key={selected.id} value={selected.proof_url || selected.receipt_url} /> : <Empty text="No proof uploaded yet." />}
                 </div>
 
-                {tab === "CASHIN" && (
-                  <div className="mt-5 grid gap-3 md:grid-cols-2">
-                    <button disabled={busyId === selected.id || normalize(selected.status) === "APPROVED"} onClick={() => verifyCashin(selected)} className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60">
-                      Verify Proof + Credit Wallet
-                    </button>
-                    <button disabled={busyId === selected.id || normalize(selected.status) === "APPROVED"} onClick={() => rejectCashin(selected)} className="rounded-2xl bg-red-600 px-6 py-4 text-sm font-black text-white hover:bg-red-700 disabled:opacity-60">
-                      Reject Cash-In
-                    </button>
-                  </div>
-                )}
 
-                {tab === "WITHDRAW" && (
+                {(
                   <div className="mt-5 rounded-3xl border border-amber-100 bg-amber-50/80 p-4">
                     <p className="text-sm font-black text-slate-950">Manual Settlement</p>
                     <p className="mt-1 text-xs font-bold leading-6 text-slate-600">
@@ -454,10 +327,10 @@ export default function AdminTreasuryPage() {
                         <input type="file" accept="image/*,application/pdf" onChange={onWithdrawalProofChange} className="mt-3 block w-full text-sm font-bold text-slate-700" />
                       </label>
                       <div className="grid gap-3 md:grid-cols-2">
-                        <button disabled={busyId === selected.id || normalize(selected.status) === "SETTLED"} onClick={() => settleWithdrawal(selected)} className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60">
+                        <button disabled={Boolean(busyId) || normalize(selected.status) !== "PENDING_REVIEW"} onClick={() => settleWithdrawal(selected)} className="rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60">
                           Upload Proof + Mark Settled
                         </button>
-                        <button disabled={busyId === selected.id || normalize(selected.status) === "SETTLED"} onClick={() => rejectWithdrawal(selected)} className="rounded-2xl bg-red-600 px-6 py-4 text-sm font-black text-white hover:bg-red-700 disabled:opacity-60">
+                        <button disabled={Boolean(busyId) || normalize(selected.status) !== "PENDING_REVIEW"} onClick={() => rejectWithdrawal(selected)} className="rounded-2xl bg-red-600 px-6 py-4 text-sm font-black text-white hover:bg-red-700 disabled:opacity-60">
                           Reject + Return Balance
                         </button>
                       </div>

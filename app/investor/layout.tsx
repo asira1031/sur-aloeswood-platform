@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { clearSurSession, getAuthenticatedProfile, getRoleRoute, saveSurSession } from "@/app/lib/auth/session";
+import AccountModeSwitcher from "@/app/components/AccountModeSwitcher";
 
 function normalizeRole(role?: string | null) {
   const value = String(role || "").toUpperCase().replace("CO_PLANTER", "COPLANTER");
@@ -10,7 +11,7 @@ function normalizeRole(role?: string | null) {
 }
 
 function isBlocked(status?: string | null) {
-  return ["PENDING", "UNDER_REVIEW", "SUSPENDED", "BLOCKED", "REJECTED", "ARCHIVED"].includes(
+  return ["SUSPENDED", "BLOCKED", "REJECTED", "ARCHIVED"].includes(
     String(status || "PENDING").toUpperCase()
   );
 }
@@ -37,7 +38,7 @@ export default function InvestorLayout({ children }: { children: ReactNode }) {
 
       const role = normalizeRole(profile.role);
 
-      if (role !== "COPLANTER") {
+      if (["ADMIN", "SUPER_ADMIN", "STAFF"].includes(role)) {
         saveSurSession(profile);
         router.replace(getRoleRoute(profile.role));
         return;
@@ -76,5 +77,5 @@ export default function InvestorLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return <div className="sur-customer-app sur-maximal-workspace"><AccountModeSwitcher mode="CUSTOMER" />{children}</div>;
 }

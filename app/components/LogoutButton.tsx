@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/app/lib/supabase/client";
 
-export default function LogoutButton({ className = "" }: { className?: string }) {
+export default function LogoutButton({ className = "", icon }: { className?: string; icon?: ReactNode }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
@@ -33,7 +34,7 @@ export default function LogoutButton({ className = "" }: { className?: string })
         "w-full rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-800 transition hover:bg-red-100 disabled:opacity-60"
       }
     >
-      {loading ? "Logging out..." : "Logout"}
+      {icon}{loading ? "Logging out..." : "Logout"}
     </button>
   );
 }

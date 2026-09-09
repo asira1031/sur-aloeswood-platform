@@ -2,8 +2,10 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import RegisterServiceWorker from "@/app/components/RegisterServiceWorker";
+import SurVisualTheme from "@/app/components/SurVisualTheme";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
   title: "SUR Aloeswood | Co-Planter Management Platform",
   description:
     "Secure plantation, wallet, certificate, and co-planter management platform for SUR Aloeswood.",
@@ -27,6 +29,9 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
   themeColor: "#06170f",
 };
 
@@ -38,8 +43,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
-  <RegisterServiceWorker />
-  {children}</body>
+        <RegisterServiceWorker />
+        <SurVisualTheme>{children}</SurVisualTheme>
+      </body>
     </html>
   );
 }

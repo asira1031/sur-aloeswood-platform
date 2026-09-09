@@ -1,84 +1,45 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
-import { formatDate, pick, statusClass, type AnyRow } from "@/app/lib/farmer/reports";
+import { formatDate, statusClass, type AnyRow } from "@/app/lib/farmer/reports";
 
 export default function FarmerProfilePage() {
-  const [email, setEmail] = useState("");
+  const [authUserId, setAuthUserId] = useState("");
   const [gardener, setGardener] = useState<AnyRow | null>(null);
   const [fullName, setFullName] = useState("");
   const [mobile, setMobile] = useState("");
-  const [status, setStatus] = useState("ACTIVE");
   const [assignments, setAssignments] = useState<AnyRow[]>([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const loadProfile = useCallback(async (userId: string) => {
+    setLoading(true);
+    setMessage("");
+    if (!userId) { setMessage("Login first to load farmer profile."); setLoading(false); return; }
+    const { data, error } = await supabase.from("gardeners").select("id, auth_user_id, full_name, email, mobile, status, created_at").eq("auth_user_id", userId).maybeSingle();
+    if (error) { setMessage(error.message); setLoading(false); return; }
+    if (!data) { setMessage("Gardener profile not found."); setGardener(null); setLoading(false); return; }
+    const { data: assignmentRows } = await supabase.from("gardener_assignments").select("id, gardener_id, tree_id, status, assigned_at").eq("gardener_id", data.id).order("assigned_at", { ascending: false });
+    setGardener(data); setFullName(data.full_name || ""); setMobile(data.mobile || ""); setAssignments((assignmentRows || []) as AnyRow[]);
+    localStorage.setItem("sur_gardener_id", data.id); setLoading(false);
+  }, []);
+
   useEffect(() => {
     async function bootstrap() {
-      const saved = localStorage.getItem("sur_login_email") || "";
-      const { data } = await supabase.auth.getUser();
-      const authEmail = data.user?.email?.toLowerCase().trim() || "";
-      const preferredEmail = authEmail || saved;
-
-      setEmail(preferredEmail);
-      if (preferredEmail) {
-        loadProfile(preferredEmail);
+      const { data, error } = await supabase.auth.getUser();
+      const userId = data.user?.id || "";
+      setAuthUserId(userId);
+      if (!error && userId) {
+        void loadProfile(userId);
       } else {
         setMessage("Login first to load farmer profile.");
       }
     }
 
-    bootstrap();
-  }, []);
-
-  async function loadProfile(targetEmail = email) {
-    setLoading(true);
-    setMessage("");
-
-    const cleanEmail = targetEmail.toLowerCase().trim();
-
-    if (!cleanEmail) {
-      setMessage("Login first to load farmer profile.");
-      setLoading(false);
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("gardeners")
-      .select("id, full_name, email, mobile, status, created_at")
-      .eq("email", cleanEmail)
-      .maybeSingle();
-
-    if (error) {
-      setMessage(error.message);
-      setLoading(false);
-      return;
-    }
-
-    if (!data) {
-      setMessage("Gardener profile not found.");
-      setGardener(null);
-      setLoading(false);
-      return;
-    }
-
-    const { data: assignmentRows } = await supabase
-      .from("gardener_assignments")
-      .select("id, gardener_id, tree_id, status, assigned_at")
-      .eq("gardener_id", data.id)
-      .order("assigned_at", { ascending: false });
-
-    setGardener(data);
-    setFullName(data.full_name || "");
-    setMobile(data.mobile || "");
-    setStatus(data.status || "ACTIVE");
-    setAssignments((assignmentRows || []) as AnyRow[]);
-    localStorage.setItem("sur_login_email", cleanEmail);
-    localStorage.setItem("sur_gardener_id", data.id);
-    setLoading(false);
-  }
+    void bootstrap();
+  }, [loadProfile]);
 
   async function saveProfile() {
     if (!gardener?.id) {
@@ -94,9 +55,9 @@ export default function FarmerProfilePage() {
       .update({
         full_name: fullName.trim(),
         mobile: mobile.trim(),
-        status,
       })
-      .eq("id", gardener.id);
+      .eq("id", gardener.id)
+      .eq("auth_user_id", authUserId);
 
     if (error) {
       setMessage(error.message);
@@ -105,7 +66,7 @@ export default function FarmerProfilePage() {
     }
 
     setMessage("Profile updated.");
-    await loadProfile(email);
+    await loadProfile(authUserId);
     setLoading(false);
   }
 
@@ -114,7 +75,7 @@ export default function FarmerProfilePage() {
 
   return (
     <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
-      <section className="border-b border-emerald-100 bg-white px-4 py-6 shadow-sm sm:px-6 md:px-10">
+      <section className="sur-page-hero border-b border-emerald-100 bg-white px-4 py-6 shadow-sm sm:px-6 md:px-10">
         <div className="mx-auto max-w-7xl">
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div>
@@ -159,12 +120,7 @@ export default function FarmerProfilePage() {
           <div className="mt-6 grid gap-4">
             <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name" className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
             <input value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Mobile" className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400" />
-            <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400">
-              <option>ACTIVE</option>
-              <option>PENDING</option>
-              <option>SUSPENDED</option>
-              <option>INACTIVE</option>
-            </select>
+            <p className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-900">Account status is controlled by Admin and cannot be changed from the caretaker profile.</p>
             <button onClick={saveProfile} disabled={loading || !gardener} className="w-full rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500">Save Profile</button>
           </div>
 

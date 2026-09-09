@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { enforceDurableRateLimit } from "@/app/lib/security/server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -14,6 +15,15 @@ function makeReferralCode(fullName: string) {
 }
 
 export async function POST(request: NextRequest) {
+  const rateLimit = await enforceDurableRateLimit(request, "coplanter-register", 5, 60 * 60);
+  if (!rateLimit.allowed) {
+    if (rateLimit.unavailable) return NextResponse.json({ error: "Registration is temporarily unavailable. Please try again later." }, { status: 503, headers: { "Retry-After": "60" } });
+    return NextResponse.json(
+      { error: "Too many registration attempts. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
+    );
+  }
+
   if (!supabaseUrl || !serviceRoleKey) {
     return NextResponse.json({ error: "Registration service is not configured." }, { status: 500 });
   }
@@ -66,22 +76,16 @@ export async function POST(request: NextRequest) {
   let authUserId = existingAuthUser?.id;
 
   if (authUserId) {
-    const { error: authUpdateError } = await admin.auth.admin.updateUserById(authUserId, {
-      password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: fullName,
-        role: "COPLANTER",
-      },
-    });
-
-    if (authUpdateError) {
-      return NextResponse.json({ error: authUpdateError.message }, { status: 500 });
-    }
+    return NextResponse.json(
+      { error: "An account already exists for this email. Use login or password recovery." },
+      { status: 409 },
+    );
   } else {
     const { data: authCreateData, error: authCreateError } = await admin.auth.admin.createUser({
       email,
       password,
+      // Product decision: co-planters sign in immediately after registration.
+      // Business approval remains enforced separately through account_status.
       email_confirm: true,
       user_metadata: {
         full_name: fullName,
@@ -107,7 +111,7 @@ export async function POST(request: NextRequest) {
       role: "COPLANTER",
       auth_user_id: authUserId,
       kyc_status: "PENDING",
-      account_status: "ACTIVE",
+      account_status: "PENDING",
       membership_status: "PENDING",
       referral_code: referralCode,
       referred_by: referredBy || null,
@@ -116,6 +120,7 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (profileError || !profile) {
+    if (authUserId) await admin.auth.admin.deleteUser(authUserId);
     return NextResponse.json({ error: profileError?.message || "Unable to create profile." }, { status: 500 });
   }
 
@@ -126,6 +131,7 @@ export async function POST(request: NextRequest) {
 
   if (walletError) {
     await admin.from("profiles").delete().eq("id", profile.id);
+    if (authUserId) await admin.auth.admin.deleteUser(authUserId);
     return NextResponse.json({ error: walletError.message }, { status: 500 });
   }
 
@@ -140,6 +146,6 @@ export async function POST(request: NextRequest) {
     ok: true,
     profile,
     referralCode,
-    message: "Your co-planter account is ready.",
+    message: "Registration complete. Your account is signed in and pending admin approval.",
   });
 }

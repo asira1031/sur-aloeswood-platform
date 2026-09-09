@@ -1,34 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import Image from "next/image";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
+import { getAuthenticatedProfile, type SurProfile } from "@/app/lib/auth/session";
 import { formatDate, statusClass, type AnyRow } from "@/app/lib/coplanting/ui";
 
 export default function NotificationsPage() {
-  const [email, setEmail] = useState("");
-  const [profile, setProfile] = useState<AnyRow | null>(null);
+  const [profile, setProfile] = useState<SurProfile | null>(null);
   const [notifications, setNotifications] = useState<AnyRow[]>([]);
   const [message, setMessage] = useState("");
 
-  useEffect(() => {
-    const saved = localStorage.getItem("sur_login_email") || "";
-    setEmail(saved);
-    if (saved) loadNotifications(saved);
-  }, []);
-
-  async function loadNotifications(targetEmail = email) {
+  const loadNotifications = useCallback(async () => {
     setMessage("");
-    const cleanEmail = targetEmail.toLowerCase().trim();
-
-    const { data: profileRow, error } = await supabase
-      .from("profiles")
-      .select("id, full_name, email")
-      .eq("email", cleanEmail)
-      .maybeSingle();
-
-    if (error || !profileRow) {
-      setMessage(error?.message || "Profile not found.");
+    const profileRow = await getAuthenticatedProfile();
+    if (!profileRow) {
+      setMessage("Please sign in again.");
       setProfile(null);
       setNotifications([]);
       return;
@@ -42,12 +30,19 @@ export default function NotificationsPage() {
 
     setProfile(profileRow);
     setNotifications((noticeRows || []) as AnyRow[]);
-    localStorage.setItem("sur_login_email", cleanEmail);
-  }
+  }, []);
+
+  useEffect(() => {
+    // Initial authenticated data load; the callback resolves asynchronously.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadNotifications();
+  }, [loadNotifications]);
 
   async function markRead(row: AnyRow, isRead: boolean) {
-    await supabase.from("notifications").update({ is_read: isRead }).eq("id", row.id);
-    await loadNotifications(email);
+    if (!profile) return;
+    const { error } = await supabase.from("notifications").update({ is_read: isRead }).eq("id", row.id).eq("profile_id", profile.id);
+    if (error) { setMessage("The notification could not be updated. Please retry."); return; }
+    await loadNotifications();
   }
 
   return (
@@ -75,7 +70,7 @@ export default function NotificationsPage() {
           <h2 className="text-2xl font-black">Notification Inbox</h2>
           <div className="mt-5 space-y-3">
             {notifications.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm font-bold text-white/60">No notifications.</div>
+              <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-center text-sm font-bold text-white/60"><Image src="/app-assets/empty-notifications-v1.png" alt="" width={160} height={160} className="mx-auto mb-3 h-28 w-28 object-contain sm:h-36 sm:w-36" />No notifications yet.</div>
             ) : notifications.map((notice) => (
               <div key={notice.id} className="rounded-2xl bg-black/20 p-4">
                 <div className="flex items-start justify-between gap-3">

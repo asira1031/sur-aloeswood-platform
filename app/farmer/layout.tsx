@@ -4,16 +4,14 @@ import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/app/lib/supabase/client";
 import { clearSurSession, getRoleRoute, saveSurSession } from "@/app/lib/auth/session";
-
-function normalizeRole(role?: string | null) {
-  return String(role || "").toUpperCase().replace("CO_PLANTER", "COPLANTER");
-}
+import AccountModeSwitcher from "@/app/components/AccountModeSwitcher";
 
 export default function FarmerLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [allowed, setAllowed] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [verifiedPath, setVerifiedPath] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -26,11 +24,10 @@ export default function FarmerLayout({ children }: { children: ReactNode }) {
       }
 
       setChecking(true);
+      setAllowed(false);
 
       const { data: authData, error: authError } = await supabase.auth.getUser();
-      const email = authData.user?.email?.toLowerCase().trim();
-
-      if (authError || !email) {
+      if (authError || !authData.user) {
         clearSurSession();
         router.replace(`/login?next=${encodeURIComponent(pathname)}`);
         return;
@@ -39,7 +36,7 @@ export default function FarmerLayout({ children }: { children: ReactNode }) {
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("id,email,full_name,role,account_status,kyc_status")
-        .eq("email", email)
+        .eq("auth_user_id", authData.user.id)
         .maybeSingle();
 
       if (profileError || !profile) {
@@ -48,16 +45,22 @@ export default function FarmerLayout({ children }: { children: ReactNode }) {
         return;
       }
 
-      const role = normalizeRole(profile.role);
       const status = String(profile.account_status || "PENDING").toUpperCase();
 
-      if (!["FARMER", "GARDENER", "CARETAKER"].includes(role)) {
+      const { data: caretakerAccess, error: caretakerError } = await supabase
+        .from("gardeners")
+        .select("id,status")
+        .eq("auth_user_id", authData.user!.id)
+        .maybeSingle();
+      const caretakerStatus = String(caretakerAccess?.status || "PENDING").toUpperCase();
+
+      if (caretakerError || !caretakerAccess) {
         saveSurSession(profile);
         router.replace(getRoleRoute(profile.role));
         return;
       }
 
-      if (["PENDING", "UNDER_REVIEW", "SUSPENDED", "BLOCKED", "REJECTED"].includes(status)) {
+      if (status !== "ACTIVE" || !["ACTIVE", "APPROVED"].includes(caretakerStatus)) {
         clearSurSession();
         router.replace("/unauthorized");
         return;
@@ -66,19 +69,28 @@ export default function FarmerLayout({ children }: { children: ReactNode }) {
       saveSurSession(profile);
 
       if (mounted) {
+        setVerifiedPath(pathname);
         setAllowed(true);
         setChecking(false);
       }
     }
 
-    verifyFarmerAccess();
+    void verifyFarmerAccess().catch(() => {
+      if (mounted) {
+        setAllowed(false);
+        router.replace("/session-expired");
+      }
+    });
 
     return () => {
       mounted = false;
     };
   }, [pathname, router]);
 
-  if (checking || !allowed) {
+  // This public entry point must render without waiting for an authenticated workspace effect.
+  if (pathname === "/farmer/register") return <>{children}</>;
+
+  if (checking || !allowed || verifiedPath !== pathname) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#06170f] p-6 text-white">
         <div className="rounded-[2rem] border border-white/10 bg-white/10 p-8 text-center shadow-2xl">
@@ -90,5 +102,5 @@ export default function FarmerLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return <div className="sur-maximal-workspace"><AccountModeSwitcher mode="CARETAKER" />{children}</div>;
 }

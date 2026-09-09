@@ -1,0 +1,1 @@
+document.querySelectorAll('button:not([disabled])').forEach((button)=>{button.addEventListener('click',()=>{if(!button.closest('a')){const original=button.textContent;button.textContent='Prototype action';setTimeout(()=>button.textContent=original,900)}})});

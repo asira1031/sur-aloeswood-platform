@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import PrivateResumeLink from "@/app/components/PrivateResumeLink";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/lib/supabase/client";
 import { formatDate, type AnyRow } from "@/app/lib/dashboard/nav";
@@ -127,7 +128,7 @@ export default function AdminGardenerPage() {
       return;
     }
 
-    const { data: publicUrlData } = supabase.storage.from("farmer-resumes").getPublicUrl(filePath);
+    const privateResumePath = filePath;
 
     const response = await fetch("/api/admin/farmers", {
       method: "POST",
@@ -139,7 +140,7 @@ export default function AdminGardenerPage() {
         fullName: cleanName,
         email: cleanEmail,
         mobile: cleanMobile,
-        resumeUrl: publicUrlData.publicUrl,
+        resumeUrl: privateResumePath,
         status: form.status,
       }),
     });
@@ -174,18 +175,23 @@ export default function AdminGardenerPage() {
 
   async function updateFarmerStatus(row: AnyRow, status: string) {
     setMessage("");
-
-    const [{ error: gardenerError }, { error: profileError }] = await Promise.all([
-      supabase.from("gardeners").update({ status }).eq("id", row.id),
-      supabase.from("profiles").update({ account_status: status }).eq("email", row.email),
-    ]);
-
-    if (gardenerError || profileError) {
-      setMessage(gardenerError?.message || profileError?.message || "Unable to update status.");
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) {
+      setMessage("Admin login is required before changing caretaker status.");
       return;
     }
-
-    setMessage(`Farmer updated to ${status}.`);
+    const response = await fetch("/api/admin/farmers", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ gardenerId: row.id, status }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      setMessage(result.error || "Unable to update caretaker status.");
+      return;
+    }
+    setMessage(result.message || `Caretaker updated to ${status}.`);
     await loadFarmers();
   }
 
@@ -212,7 +218,7 @@ export default function AdminGardenerPage() {
     <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
       <div className="mx-auto w-full max-w-[1500px] px-4 py-4 lg:px-6">
         <section className="relative overflow-hidden rounded-[2rem] border border-white/20 p-6 shadow-sm lg:p-8">
-          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/forest-bg.jpg')" }} />
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/app-assets/sur-botanical-maximal-v1.png')" }} />
           <div className="absolute inset-0 bg-gradient-to-r from-green-950/90 via-green-900/66 to-green-950/18" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/10" />
 
@@ -411,13 +417,7 @@ function FarmerDetails({
             <p className="mt-1 text-xs font-bold text-slate-500">Submitted during admin farmer registration.</p>
           </div>
           {farmer.resume_url ? (
-            <a
-              href={farmer.resume_url}
-              target="_blank"
-              className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-black text-white hover:bg-emerald-700"
-            >
-              Open Photo
-            </a>
+            <PrivateResumeLink value={farmer.resume_url} />
           ) : (
             <Badge value="NO PHOTO" />
           )}

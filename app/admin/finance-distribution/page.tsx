@@ -85,7 +85,7 @@ export default function AdminFinanceDistributionPage() {
   }, [rows, period, beneficiary, sourceType, status, fromDate, toDate, search]);
 
   const payoutGroups = useMemo(() => {
-    const pendingRows = rows.filter((row) => String(row.settlement_status || "").toUpperCase() !== "SETTLED");
+    const pendingRows = rows.filter((row) => ["PENDING_SETTLEMENT", "READY_FOR_PAYOUT"].includes(String(row.settlement_status || "").toUpperCase()));
     const map = new Map<string, AnyRow[]>();
     const payoutMonths = new Set<string>();
 
@@ -127,7 +127,7 @@ export default function AdminFinanceDistributionPage() {
   }, [rows]);
 
   const totals = useMemo(() => {
-    const pending = rows.filter((row) => row.settlement_status !== "SETTLED");
+    const pending = rows.filter((row) => ["PENDING_SETTLEMENT", "READY_FOR_PAYOUT"].includes(String(row.settlement_status || "").toUpperCase()));
     return {
       rowCount: filteredRows.length,
       gross: filteredRows.reduce((sum, row) => sum + Number(row.gross_amount || 0), 0),
@@ -136,74 +136,46 @@ export default function AdminFinanceDistributionPage() {
     };
   }, [filteredRows, rows]);
 
-  async function markGroupSettled(group: (typeof payoutGroups)[number]) {
-    if (group.rows.length === 0) {
-      setMessage(`${group.beneficiaryName} has no pending allocation rows for ${group.month}.`);
-      return;
-    }
-
+  async function reviewGroup(group: (typeof payoutGroups)[number], nextStatus: string) {
+    if (busyKey || group.rows.length === 0) return;
     const input = settlementInputs[group.key] || { reference: "", notes: "" };
-
-    if (!input.reference.trim()) {
+    if (nextStatus === "SETTLED" && !input.reference.trim()) {
       setMessage("Transfer reference is required before marking a payout group settled.");
       return;
     }
-
     setBusyKey(group.key);
     setMessage("");
-
-    const profileId = safeLocalStorage("sur_profile_id");
-    const { error } = await supabase
-      .from("revenue_allocations")
-      .update({
-        settlement_status: "SETTLED",
-        settlement_reference: input.reference.trim(),
-        settlement_notes: input.notes.trim() || null,
-        settled_by: profileId || null,
-        settled_at: new Date().toISOString(),
-      })
-      .in(
-        "id",
-        group.rows.map((row) => row.id)
-      );
-
-    if (error) {
-      setMessage(error.message);
+    try {
+      const { error } = await supabase.rpc("sur_admin_review_allocations", {
+        p_ids: group.rows.map(row => row.id),
+        p_expected: Object.fromEntries(group.rows.map(row => [row.id, {
+          status: row.settlement_status, amount: String(row.allocated_amount),
+        }])),
+        p_status: nextStatus,
+        p_reference: input.reference.trim(),
+        p_notes: input.notes.trim(),
+      });
+      if (error) {
+        setMessage(error.code === "PGRST202"
+          ? "Settlement review is unavailable until the administrator applies migration 099."
+          : error.message);
+        return;
+      }
+      await loadAllocations();
+      setMessage(`${group.beneficiaryName}: ${nextStatus.replaceAll("_", " ")} recorded.`);
+    } catch {
+      setMessage("Connection interrupted. Refresh the ledger before retrying; the request may have completed.");
+    } finally {
       setBusyKey("");
-      return;
     }
+  }
 
-    setMessage(`${group.beneficiaryName} ${group.month} payout marked settled for monthly manual settlement records.`);
-    await loadAllocations();
-    setBusyKey("");
+  async function markGroupSettled(group: (typeof payoutGroups)[number]) {
+    await reviewGroup(group, "SETTLED");
   }
 
   async function updateGroupStatus(group: (typeof payoutGroups)[number], nextStatus: string) {
-    if (group.rows.length === 0) {
-      setMessage(`${group.beneficiaryName} has no pending allocation rows for ${group.month}.`);
-      return;
-    }
-
-    setBusyKey(group.key);
-    setMessage("");
-
-    const { error } = await supabase
-      .from("revenue_allocations")
-      .update({ settlement_status: nextStatus })
-      .in(
-        "id",
-        group.rows.map((row) => row.id)
-      );
-
-    if (error) {
-      setMessage(error.message);
-      setBusyKey("");
-      return;
-    }
-
-    setMessage(`${group.beneficiaryName} group updated to ${nextStatus}.`);
-    await loadAllocations();
-    setBusyKey("");
+    await reviewGroup(group, nextStatus);
   }
 
   function exportGroup(group: (typeof payoutGroups)[number]) {
@@ -248,7 +220,7 @@ export default function AdminFinanceDistributionPage() {
     <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
       <div className="mx-auto w-full max-w-[1580px] px-4 py-4 lg:px-6">
         <section className="relative overflow-hidden rounded-[2rem] border border-white/25 p-6 shadow-sm lg:p-8">
-          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/forest-bg.jpg')" }} />
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/app-assets/sur-botanical-maximal-v1.png')" }} />
           <div className="absolute inset-0 bg-gradient-to-r from-emerald-950/94 via-emerald-900/72 to-slate-950/28" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/10" />
 
@@ -605,10 +577,3 @@ function beneficiaryFor(row: AnyRow) {
   };
 }
 
-function safeLocalStorage(key: string) {
-  try {
-    return window.localStorage.getItem(key) || "";
-  } catch {
-    return "";
-  }
-}

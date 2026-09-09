@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/app/lib/supabase/client";
+import { saveSurSession } from "@/app/lib/auth/session";
 
 function makeReferralCode(fullName: string) {
   const base = fullName
@@ -13,6 +16,7 @@ function makeReferralCode(fullName: string) {
 }
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [step, setStep] = useState<"FORM" | "DONE">("FORM");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -21,6 +25,9 @@ export default function RegisterPage() {
   const [mobile, setMobile] = useState("");
   const [address, setAddress] = useState("");
   const [referredBy, setReferredBy] = useState("");
+  const [idFront, setIdFront] = useState<File | null>(null);
+  const [idBack, setIdBack] = useState<File | null>(null);
+  const [selfie, setSelfie] = useState<File | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -33,7 +40,17 @@ export default function RegisterPage() {
     }
     if (password.length < 8) return "Password must be at least 8 characters.";
     if (password !== confirmPassword) return "Passwords do not match.";
+    if (!idFront || !idBack || !selfie) return "Upload the front and back of your valid ID, plus a clear selfie.";
     return "";
+  }
+
+  async function uploadKyc(profileId: string, kind: string, file: File) {
+    if (file.size > 10 * 1024 * 1024) throw new Error(`${kind} must be 10MB or smaller.`);
+    const extension = file.name.split(".").pop()?.replace(/[^a-z0-9]/gi, "").toLowerCase() || "jpg";
+    const path = `${profileId}/${kind}-${Date.now()}.${extension}`;
+    const { data, error } = await supabase.storage.from("kyc-docs").upload(path, file, { contentType: file.type || undefined, upsert: false });
+    if (error) throw error;
+    return data.path;
   }
 
   async function createAccount() {
@@ -44,8 +61,9 @@ export default function RegisterPage() {
       return;
     }
 
+    if (loading) return;
     setLoading(true);
-
+    try {
     const response = await fetch("/api/register/coplanter", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -61,26 +79,64 @@ export default function RegisterPage() {
     });
 
     const result = await response.json().catch(() => null);
-    setLoading(false);
-
     if (!response.ok) {
+      setLoading(false);
       setMessage(result?.error || "Unable to create account.");
       return;
     }
 
-    setStep("DONE");
-    setMessage(`Your account is ready. Referral code: ${result?.referralCode || referralCode}.`);
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password,
+    });
+
+    if (signInError || !signInData.user || !result?.profile) {
+      setLoading(false);
+      setStep("DONE");
+      setMessage("Account created, but automatic login failed. Please use the login page.");
+      return;
+    }
+
+    try {
+      const [frontUrl, backUrl, selfieUrl] = await Promise.all([
+        uploadKyc(result.profile.id, "valid-id-front", idFront!),
+        uploadKyc(result.profile.id, "valid-id-back", idBack!),
+        uploadKyc(result.profile.id, "selfie", selfie!),
+      ]);
+      const now = new Date().toISOString();
+      const { error: kycError } = await supabase.from("profiles").update({
+        kyc_id_url: frontUrl, kyc_document_url: frontUrl, valid_id_url: frontUrl,
+        kyc_extra_url: backUrl, kyc_selfie_url: selfieUrl, kyc_photo_url: selfieUrl, selfie_url: selfieUrl,
+        kyc_status: "PENDING", kyc_submitted_at: now, kyc_updated_at: now,
+      }).eq("id", result.profile.id);
+      if (kycError) throw kycError;
+    } catch (kycError) {
+      setLoading(false);
+      setStep("DONE");
+      setMessage(`Account created, but KYC upload needs support: ${kycError instanceof Error ? kycError.message : "upload failed"}`);
+      return;
+    }
+
+    saveSurSession({
+      ...result.profile,
+      role: "COPLANTER",
+      account_status: "PENDING",
+    });
+    setMessage(`Account ready. Referral code: ${result?.referralCode || referralCode}. Opening your dashboard...`);
+    router.replace("/investor/my-trees");
+    } catch { setMessage("Connection interrupted. If your account was created, sign in instead of registering again."); }
+    finally { setLoading(false); }
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#052016] text-white">
-      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/forest-bg.jpg')" }} />
+    <main className="sur-maximal-auth relative min-h-screen overflow-hidden bg-[#052016] text-white">
+      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/app-assets/sur-botanical-maximal-v1.png')" }} />
       <div className="absolute inset-0 bg-gradient-to-r from-emerald-950/92 via-emerald-950/72 to-slate-950/55" />
       <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/10" />
 
       <nav className="relative z-10 flex items-center justify-between px-5 py-5 lg:px-12">
         <Link href="/" className="flex items-center gap-3">
-          <img src="/agarwood.png" alt="SUR Aloeswood" className="h-12 w-12 rounded-2xl object-cover shadow-lg" />
+          <img src="/sur-logo.png" alt="SUR Aloeswood" className="h-12 w-12 rounded-full border-2 border-[#dbc27e] object-cover shadow-lg" />
           <div>
             <h1 className="text-xl font-black tracking-wide">SUR ALOESWOOD</h1>
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-100/80">Co-Planter Access</p>
@@ -147,6 +203,16 @@ export default function RegisterPage() {
                 />
               </div>
 
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-5">
+                <h4 className="font-black text-emerald-950">Identity verification</h4>
+                <p className="mt-1 text-xs font-bold leading-5 text-emerald-800/75">Use clear, readable photos. Maximum 10MB each.</p>
+                <div className="mt-4 grid gap-4 md:grid-cols-3">
+                  <KycFile label="Valid ID — Front" file={idFront} onChange={setIdFront} />
+                  <KycFile label="Valid ID — Back" file={idBack} onChange={setIdBack} />
+                  <KycFile label="Clear Selfie" file={selfie} onChange={setSelfie} capture />
+                </div>
+              </div>
+
               {message && <Notice text={message} tone={message.toLowerCase().includes("ready") ? "good" : "warn"} />}
 
               <button type="button" onClick={createAccount} disabled={loading} className="w-full rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-black text-white shadow-lg hover:bg-emerald-700 disabled:bg-slate-400">
@@ -163,9 +229,9 @@ export default function RegisterPage() {
             </div>
           )}
 
-          <p className="mt-6 text-sm font-medium text-slate-500">
+          <p className="mt-6 flex flex-wrap items-center gap-1 text-sm font-medium text-slate-500">
             Already have an account?{" "}
-            <Link href="/login" className="font-black text-emerald-700">
+            <Link href="/login" className="inline-flex min-h-11 items-center rounded-xl px-3 font-black text-emerald-700 hover:bg-emerald-50">
               Login here
             </Link>
           </p>
@@ -217,4 +283,12 @@ function Notice({ text, tone }: { text: string; tone: "good" | "warn" }) {
       {text}
     </div>
   );
+}
+
+function KycFile({ label, file, onChange, capture = false }: { label: string; file: File | null; onChange: (file: File | null) => void; capture?: boolean }) {
+  return <label className="rounded-2xl border border-dashed border-emerald-300 bg-white p-4 text-sm font-black text-slate-700">
+    <span>{label}</span>
+    <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture={capture ? "user" : undefined} onChange={(event) => onChange(event.target.files?.[0] || null)} className="mt-3 block w-full text-xs font-bold file:mr-2 file:rounded-lg file:border-0 file:bg-emerald-700 file:px-3 file:py-2 file:font-black file:text-white" />
+    <span className="mt-2 block truncate text-xs font-bold text-emerald-700">{file?.name || "Required"}</span>
+  </label>;
 }

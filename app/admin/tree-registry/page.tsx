@@ -39,19 +39,10 @@ export default function AdminTreeRegistryPage() {
   const [uploading, setUploading] = useState(false);
   const [documentsReady, setDocumentsReady] = useState(true);
 
-  useEffect(() => {
-    void loadRegistry();
-  }, []);
-
   async function loadRegistry() {
     setMessage("");
 
-    const [rpcResult, registryResult, treeResult, profileResult, documentResult, logResult, orderResult, assignmentResult] = await Promise.all([
-      supabase.rpc("admin_tree_registry_records"),
-      supabase
-        .from("admin_tree_registry_verification_view")
-        .select("*")
-        .order("tree_created_at", { ascending: false }),
+    const [treeResult, profileResult, documentResult, logResult, orderResult, assignmentResult] = await Promise.all([
       supabase
         .from("tree_registry")
         .select("id, profile_id, purchase_id, tree_code, denr_tag_number, species, status, gps_lat, gps_lng, planted_at, created_at")
@@ -79,23 +70,13 @@ export default function AdminTreeRegistryPage() {
         .limit(3000),
     ]);
 
-    const safeRegistryRows = ((rpcResult.data || registryResult.data || []) as AnyRow[]);
-    const safeTrees =
-      treeResult.error || !(treeResult.data || []).length
-        ? safeRegistryRows.map(registryRowToTree)
-        : ((treeResult.data || []) as AnyRow[]);
-    const safeProfiles =
-      profileResult.error || !(profileResult.data || []).length
-        ? buildProfilesFromRegistryRows(safeRegistryRows)
-        : ((profileResult.data || []) as AnyRow[]);
+    const safeRegistryRows: AnyRow[] = [];
+    const safeTrees = (treeResult.data || []) as AnyRow[];
+    const safeProfiles = (profileResult.data || []) as AnyRow[];
 
-    if (treeResult.error && !safeRegistryRows.length) {
-      setMessage(`${treeResult.error.message}. Run the admin_tree_registry_records SQL so Tree Registry can read owner records safely.`);
+    if (treeResult.error || profileResult.error) {
+      setMessage(treeResult.error?.message || profileResult.error?.message || "Unable to load the tree registry.");
       return;
-    }
-
-    if (rpcResult.error && registryResult.error) {
-      setMessage(`${rpcResult.error.message}. ${registryResult.error.message}. Direct tree_registry fallback is active.`);
     }
 
     setRegistryRows(safeRegistryRows);
@@ -123,6 +104,12 @@ export default function AdminTreeRegistryPage() {
     setSelectedOwnerId(nextOwnerId);
     selectTree(nextTree);
   }
+
+  useEffect(() => {
+    void loadRegistry();
+    // Initial admin registry load; subsequent refreshes are explicit user actions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function selectOwner(ownerId: string) {
     setSelectedOwnerId(ownerId);
@@ -360,7 +347,7 @@ export default function AdminTreeRegistryPage() {
     <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
       <div className="mx-auto w-full max-w-[1700px] px-4 py-4 lg:px-6">
         <section className="relative overflow-hidden rounded-[2rem] border border-white/20 p-6 shadow-sm lg:p-8">
-          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/forest-bg.jpg')" }} />
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/app-assets/sur-botanical-maximal-v1.png')" }} />
           <div className="absolute inset-0 bg-gradient-to-r from-green-950/92 via-green-900/70 to-green-950/22" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/10" />
 
@@ -642,42 +629,6 @@ function buildTreeOwners(trees: AnyRow[], profiles: AnyRow[], registryRows: AnyR
   }
 
   return Array.from(owners.values()).sort((a, b) => String(a.full_name || "").localeCompare(String(b.full_name || "")));
-}
-
-function registryRowToTree(row: AnyRow) {
-  return {
-    id: row.tree_id || row.id,
-    profile_id: row.profile_id,
-    purchase_id: row.purchase_id,
-    tree_code: row.tree_code,
-    denr_tag_number: row.denr_tag_number,
-    species: row.species || "Aquilaria Malaccensis",
-    status: row.tree_status || row.status,
-    gps_lat: row.gps_lat,
-    gps_lng: row.gps_lng,
-    planted_at: row.planted_at,
-    created_at: row.tree_created_at || row.created_at,
-  };
-}
-
-function buildProfilesFromRegistryRows(rows: AnyRow[]) {
-  const profiles = new Map<string, AnyRow>();
-
-  for (const row of rows) {
-    const id = String(row.profile_id || "");
-    if (!id || profiles.has(id)) continue;
-
-    profiles.set(id, {
-      id,
-      full_name: row.owner_name || "Unknown Tree Owner",
-      email: row.owner_email || "",
-      role: row.owner_role || row.role || "TREE_OWNER",
-      account_status: row.owner_account_status || row.account_status || "",
-      membership_status: row.owner_membership_status || row.membership_status || "",
-    });
-  }
-
-  return Array.from(profiles.values());
 }
 
 function Panel({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {

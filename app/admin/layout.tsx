@@ -2,6 +2,9 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import Link from "next/link";
+import Image from "next/image";
+import LogoutButton from "@/app/components/LogoutButton";
 import {
   clearSurSession,
   getAuthenticatedProfile,
@@ -14,9 +17,7 @@ function normalizeRole(role?: string | null) {
 }
 
 function isBlocked(status?: string | null) {
-  return ["PENDING", "UNDER_REVIEW", "SUSPENDED", "BLOCKED", "REJECTED", "ARCHIVED"].includes(
-    String(status || "PENDING").toUpperCase()
-  );
+  return String(status || "").toUpperCase() !== "ACTIVE";
 }
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
@@ -30,22 +31,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
     async function verifyAdminAccess() {
       setChecking(true);
-
-      const localEmail = localStorage.getItem("sur_login_email");
-      const localRole = normalizeRole(localStorage.getItem("sur_profile_role"));
-      const localStatus = String(localStorage.getItem("sur_account_status") || "").toUpperCase();
-
-      if (
-        localEmail &&
-        ["ADMIN", "SUPER_ADMIN", "STAFF"].includes(localRole) &&
-        localStatus === "ACTIVE"
-      ) {
-        if (mounted) {
-          setAllowed(true);
-          setChecking(false);
-        }
-        return;
-      }
 
       const profile = await getAuthenticatedProfile();
 
@@ -100,5 +85,52 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  const navigation = [
+    { href: "/admin/dashboard", label: "Dashboard" },
+    { href: "/admin/accounts", label: "Accounts" },
+    { href: "/admin/tree", label: "Tree" },
+    { href: "/admin/contracts", label: "Contracts" },
+    { href: "/admin/tasks", label: "Tasks" },
+    { href: "/admin/support", label: "Support" },
+  ];
+
+  return (
+    <div className={`${/\/admin\/(toh|guardian|recovery)(\/|$)/.test(pathname) ? "" : "sur-maximal-workspace"} min-h-screen bg-[#f4f1e7]`}>
+      <header className="sticky top-0 z-50 border-b border-[#d9d4c5] bg-[#fbfaf5]/95 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+          <Link href="/admin/dashboard" className="flex min-w-0 items-center gap-3">
+            <Image src="/sur-logo.png" alt="SUR Aloeswood" width={48} height={48} className="h-11 w-11 shrink-0 rounded-full object-contain" />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black tracking-[.13em] text-[#073d2e] sm:text-base">SUR ALOESWOOD</p>
+              <p className="text-[10px] font-black uppercase tracking-[.2em] text-[#75847d]">Admin workspace</p>
+            </div>
+          </Link>
+
+          <div className="flex items-center gap-2">
+            <details className="relative lg:hidden">
+              <summary className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-full border border-[#cdd9d2] bg-white text-xl font-black text-[#073d2e]">☰</summary>
+              <nav className="absolute right-0 top-14 w-64 rounded-2xl border border-[#d9d4c5] bg-white p-2 shadow-2xl">
+                {navigation.map((item) => <AdminLink key={item.href} {...item} active={pathname.startsWith(item.href)} mobile />)}
+                <LogoutButton className="mt-1 w-full rounded-xl px-4 py-3 text-left text-sm font-black text-red-700 hover:bg-red-50" />
+              </nav>
+            </details>
+            <LogoutButton className="hidden rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-black text-red-700 hover:bg-red-50 lg:block" />
+          </div>
+        </div>
+
+        <nav className="mx-auto hidden max-w-[1440px] gap-1 overflow-x-auto px-6 pb-3 lg:flex lg:px-8">
+          {navigation.map((item) => <AdminLink key={item.href} {...item} active={pathname.startsWith(item.href)} />)}
+        </nav>
+      </header>
+      {children}
+    </div>
+  );
+}
+
+function AdminLink({ href, label, active, mobile = false }: { href: string; label: string; active: boolean; mobile?: boolean }) {
+  return (
+    <Link href={href} className={`${mobile ? "block rounded-xl px-4 py-3" : "whitespace-nowrap rounded-full px-4 py-2.5"} text-sm font-black transition ${active ? "bg-[#073d2e] text-white" : "text-[#53665d] hover:bg-[#e8eee9] hover:text-[#073d2e]"}`}>
+      {label}
+    </Link>
+  );
 }

@@ -40,6 +40,6 @@ export function getPublicSupportContacts() {
   return [
     { label: "Support Email", value: "support@sur-aloeswood.com" },
     { label: "Operations Desk", value: "Plantation Operations" },
-    { label: "Wallet Desk", value: "Treasury / Cash-In Review" },
+    { label: "Wallet Desk", value: "Treasury / Withdrawal Review" },
   ];
 }

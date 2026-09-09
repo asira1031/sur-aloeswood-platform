@@ -1,5 +1,6 @@
 "use client";
 
+import PrivateKycPreview from "@/app/components/PrivateKycPreview";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -57,21 +58,18 @@ export default function AdminCoPlanterKycDetailPage() {
     setLoading(false);
   }
 
-  async function ensureWallet(targetProfile: AnyRow) {
-    if (wallet) return wallet;
-
-    const { data, error } = await supabase
-      .from("wallets")
-      .insert({
-        profile_id: targetProfile.id,
-        balance: Number(targetProfile.wallet_balance || 0),
-      })
-      .select("id, profile_id, balance, updated_at")
-      .maybeSingle();
-
-    if (error) throw error;
-    setWallet(data as AnyRow);
-    return data;
+  async function runAdminAction(action: string, accountStatus?: string) {
+    if (!profile) throw new Error("Co-planter profile not found.");
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error("Admin login is required.");
+    const response = await fetch(`/api/admin/coplanters/${profile.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action, accountStatus }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to update customer account.");
   }
 
   async function approveKyc() {
@@ -80,25 +78,7 @@ export default function AdminCoPlanterKycDetailPage() {
     setMessage("");
 
     try {
-      await ensureWallet(profile);
-
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          kyc_status: "APPROVED",
-          account_status: String(profile.account_status || "").toUpperCase() === "PENDING" ? "ACTIVE" : profile.account_status,
-          kyc_verified_at: new Date().toISOString(),
-          kyc_updated_at: new Date().toISOString(),
-        })
-        .eq("id", profile.id);
-
-      if (error) throw error;
-
-      await notifyProfile(
-        profile.id,
-        "KYC approved",
-        "Your KYC verification has been approved. Your submitted documents are now verified."
-      );
+      await runAdminAction("APPROVE_KYC");
 
       setMessage("KYC approved. This record is now completed and will leave the Needs Review list.");
       await loadData(profile.id);
@@ -115,21 +95,7 @@ export default function AdminCoPlanterKycDetailPage() {
     setMessage("");
 
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          kyc_status: "REJECTED",
-          kyc_updated_at: new Date().toISOString(),
-        })
-        .eq("id", profile.id);
-
-      if (error) throw error;
-
-      await notifyProfile(
-        profile.id,
-        "KYC rejected",
-        "Your KYC verification was rejected. Please update your details or upload clearer documents for review."
-      );
+      await runAdminAction("REJECT_KYC");
 
       setMessage("KYC rejected. This record is now completed and will leave the Needs Review list.");
       await loadData(profile.id);
@@ -146,23 +112,7 @@ export default function AdminCoPlanterKycDetailPage() {
     setMessage("");
 
     try {
-      await ensureWallet(profile);
-
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          account_status: accountStatus,
-          membership_status: accountStatus === "ACTIVE" ? profile.membership_status || "PENDING" : profile.membership_status,
-        })
-        .eq("id", profile.id);
-
-      if (error) throw error;
-
-      await notifyProfile(
-        profile.id,
-        `Account ${accountStatus.toLowerCase()}`,
-        `Your co-planter account is now ${accountStatus}.`
-      );
+      await runAdminAction("SET_ACCOUNT_STATUS", accountStatus);
 
       setMessage(`Account updated to ${accountStatus}.`);
       await loadData(profile.id);
@@ -173,15 +123,6 @@ export default function AdminCoPlanterKycDetailPage() {
     setBusy(false);
   }
 
-  async function notifyProfile(profileId: string, title: string, body: string) {
-    await supabase.from("notifications").insert({
-      profile_id: profileId,
-      title,
-      message: body,
-      is_read: false,
-    });
-  }
-
   const kycFiles = useMemo(() => (profile ? getKycFiles(profile) : []), [profile]);
   const kycStatus = profile ? getKycViewStatus(profile) : "PENDING";
   const queueStatus = profile ? getKycQueueStatus(profile) : "NO_FILES";
@@ -190,7 +131,7 @@ export default function AdminCoPlanterKycDetailPage() {
     <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
       <div className="mx-auto w-full max-w-[1500px] px-4 py-4 lg:px-6">
         <section className="relative overflow-hidden rounded-[2rem] border border-white/20 p-6 shadow-sm lg:p-8">
-          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/forest-bg.jpg')" }} />
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/app-assets/sur-botanical-maximal-v1.png')" }} />
           <div className="absolute inset-0 bg-gradient-to-r from-green-950/90 via-green-900/66 to-green-950/18" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/10" />
 
@@ -432,7 +373,7 @@ function getKycFiles(profile: AnyRow) {
   return [
     { label: "Valid ID", url: firstText(profile, ["kyc_id_url", "kyc_document_url", "valid_id_url", "id_document_url", "government_id_url"]) },
     { label: "Selfie / Photo", url: firstText(profile, ["kyc_selfie_url", "selfie_url", "kyc_photo_url", "face_photo_url"]) },
-    { label: "Extra Document", url: firstText(profile, ["kyc_extra_url", "proof_of_address_url", "supporting_document_url"]) },
+    { label: "Valid ID — Back", url: firstText(profile, ["kyc_extra_url", "proof_of_address_url", "supporting_document_url"]) },
   ].filter((file) => file.url);
 }
 
@@ -444,30 +385,7 @@ function firstText(row: AnyRow, keys: string[]) {
   return "";
 }
 
-function KycPreview({ label, url }: { label: string; url: string }) {
-  return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      {isImageUrl(url) ? (
-        <a href={url} target="_blank" rel="noreferrer">
-          <img src={url} alt={label} className="h-72 w-full object-cover" />
-        </a>
-      ) : isPdfUrl(url) ? (
-        <iframe src={url} title={label} className="h-72 w-full bg-slate-100" />
-      ) : (
-        <div className="flex h-72 items-center justify-center bg-slate-100 text-sm font-black text-slate-600">Document file</div>
-      )}
-      <div className="flex items-center justify-between gap-3 p-4">
-        <div className="min-w-0">
-          <p className="text-sm font-black text-slate-950">{label}</p>
-          <p className="mt-1 truncate text-xs font-bold text-slate-500">{url}</p>
-        </div>
-        <a href={url} target="_blank" rel="noreferrer" className="shrink-0 rounded-xl bg-slate-950 px-4 py-2 text-xs font-black text-white">
-          Open
-        </a>
-      </div>
-    </div>
-  );
-}
+function KycPreview({label,url}:{label:string;url:string}) { return <PrivateKycPreview label={label} url={url}/>; }
 
 function isImageUrl(url: string) {
   return /\.(png|jpe?g|webp|gif|bmp|avif|heic|heif)(\?|#|$)/i.test(url);

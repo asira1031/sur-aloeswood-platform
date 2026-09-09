@@ -36,7 +36,7 @@ export const launchChecklist: LaunchChecklistItem[] = [
     area: "Co-Planter",
     status: "NEEDS_UAT",
     title: "Customer purchase flow",
-    detail: "Test wallet cash-in, admin treasury approval, wallet seedling purchase, admin AG tree approval, and My AG Trees visibility.",
+    detail: "Test Maya QR tree checkout, admin order approval, My Trees visibility, withdrawal review, and payout proof.",
   },
   {
     area: "Farmer",

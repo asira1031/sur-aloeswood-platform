@@ -36,6 +36,16 @@ yarn-error.log*
 # vercel
 .vercel
 
+# TOH local runtime evidence and snapshots
+/toh/generated/
+
+# Guardian local feature briefs and verification jobs
+/.guardian/
+
+# local export artifact; the source HTML prototype folder is versioned
+/SUR_HTML_UI_PROTOTYPE.zip
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.vercel
