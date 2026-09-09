@@ -114,7 +114,9 @@ test("critical phone workflows have full-width touch actions and readable contro
   assert.match(checkout, /text-3xl[\s\S]*sm:text-4xl/);
   assert.match(contract, /mobile-sticky-action/);
   assert.match(contract, /h-6 w-6/);
-  assert.match(dailyCare, /mobile-sticky-action/);
+  // The long care form keeps its touch-sized submit in normal flow so it cannot cover fields.
+  assert.match(dailyCare, /mobile-primary-action w-full/);
+  assert.doesNotMatch(dailyCare, /mobile-sticky-action/);
   assert.match(dailyCare, /capture="environment"/);
   assert.match(adminOrders, /mobile-primary-action w-full/);
   assert.match(publicTree, /sm:w-auto/);

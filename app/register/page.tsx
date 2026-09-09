@@ -129,8 +129,8 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#052016] text-white">
-      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/sur-bg-auth-v2.png')" }} />
+    <main className="sur-maximal-auth relative min-h-screen overflow-hidden bg-[#052016] text-white">
+      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/app-assets/sur-botanical-maximal-v1.png')" }} />
       <div className="absolute inset-0 bg-gradient-to-r from-emerald-950/92 via-emerald-950/72 to-slate-950/55" />
       <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/10" />
 

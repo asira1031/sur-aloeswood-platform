@@ -75,7 +75,7 @@ export default function FarmerProfilePage() {
 
   return (
     <main className="min-h-screen bg-[#f3f7f1] text-slate-950">
-      <section className="border-b border-emerald-100 bg-white px-4 py-6 shadow-sm sm:px-6 md:px-10">
+      <section className="sur-page-hero border-b border-emerald-100 bg-white px-4 py-6 shadow-sm sm:px-6 md:px-10">
         <div className="mx-auto max-w-7xl">
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div>

@@ -221,9 +221,9 @@ export default function CaretakerDailyCarePage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f4f1e7] p-3 text-[#10271f] sm:p-5 lg:p-8">
-      <div className="mx-auto max-w-6xl">
-        <header className="rounded-[1.5rem] bg-[#073d2e] p-5 text-white shadow-xl shadow-[#073d2e]/10 sm:rounded-[2rem] sm:p-7">
+    <main className="sur-page min-h-screen bg-[#f4f1e7] p-3 text-[#10271f] sm:p-5 lg:p-8">
+      <div className="sur-page-content mx-auto max-w-6xl">
+        <header className="sur-page-hero rounded-[1.5rem] bg-[#073d2e] p-5 text-white shadow-xl shadow-[#073d2e]/10 sm:rounded-[2rem] sm:p-7">
           <p className="text-xs font-black uppercase tracking-[.16em] text-[#9ee7c5] sm:tracking-[.25em]">My Care Work</p>
           <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div><h1 className="text-3xl font-black sm:text-4xl">Today&apos;s tree care</h1><p className="mt-2 text-sm text-white/70">Open a task, record the work, then send it to Admin.</p></div>
@@ -234,7 +234,7 @@ export default function CaretakerDailyCarePage() {
         {message && <p aria-live="polite" className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm font-bold text-amber-900">{message}</p>}
 
         <div className="mt-5 grid gap-5 md:grid-cols-[minmax(240px,.75fr)_minmax(0,1.25fr)]">
-          <section className="min-w-0 rounded-[1.5rem] border border-[#ded8ca] bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-5">
+          <section className="sur-panel min-w-0 rounded-[1.5rem] border border-[#ded8ca] bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-5">
             <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[.18em] text-[#08745b]">Task list</p><h2 className="mt-1 text-xl font-black sm:text-2xl">Today&apos;s Tasks</h2><p className="mt-1 text-xs text-[#718078]">Choose one task to begin.</p></div><button onClick={load} className="mobile-primary-action shrink-0 rounded-xl border border-[#d5ddd8] bg-[#f7f9f7] px-3 py-2 text-xs font-black">{loading ? "Loading…" : "Refresh"}</button></div>
             <div className="mt-5 space-y-3">
               {assignments.length === 0 && !loading ? <Empty text="No active Tree ID assignment. Ask the admin to assign a signed tree." /> : assignments.map((assignment) => {
@@ -249,7 +249,7 @@ export default function CaretakerDailyCarePage() {
           </section>
 
           <div className="space-y-5">
-            <section className="min-w-0 rounded-[1.5rem] border border-[#ded8ca] bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-6">
+            <section className="sur-panel min-w-0 rounded-[1.5rem] border border-[#ded8ca] bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-6">
               {!selectedTree ? <Empty text="Select an assigned Tree ID." /> : <>
                 <p className="text-xs font-black uppercase tracking-[.2em] text-[#08745b]">Daily report</p>
                 <h2 className="mt-2 break-words text-2xl font-black text-[#073d2e] sm:text-3xl">{String(selectedAssignment?.task_title || "Add care update")}</h2>
@@ -257,7 +257,7 @@ export default function CaretakerDailyCarePage() {
                 {Boolean(selectedAssignment?.admin_note) && <p className="mt-4 rounded-2xl bg-sky-50 p-4 text-sm font-bold leading-6 text-sky-900">Admin note: {String(selectedAssignment?.admin_note)}</p>}
 
                 <form onSubmit={submit} className="mt-6 space-y-4">
-                  <fieldset><legend className="text-sm font-black">When did you do the task?</legend><div className="mt-2 grid grid-cols-3 gap-2">{carePeriods.map(([value,label])=><button key={value} type="button" onClick={()=>setCarePeriod(value)} className={`rounded-2xl border px-2 py-3 text-sm font-black ${carePeriod===value?"border-[#08745b] bg-[#eaf6ef] text-[#073d2e]":"border-[#d8d4c8] bg-white text-[#617169]"}`}>{label}</button>)}</div></fieldset>
+                  <fieldset><legend className="text-sm font-black">When did you do the task?</legend><div className="mt-2 grid grid-cols-3 gap-2">{carePeriods.map(([value,label])=><button key={value} aria-pressed={carePeriod===value} type="button" onClick={()=>setCarePeriod(value)} className={`rounded-2xl border px-2 py-3 text-sm font-black ${carePeriod===value?"border-[#08745b] bg-[#eaf6ef] text-[#073d2e]":"border-[#d8d4c8] bg-white text-[#617169]"}`}>{label}</button>)}</div></fieldset>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <label className="text-sm font-black">Date<input type="date" value={observedOn} max={todayLocal()} onChange={(event) => setObservedOn(event.target.value)} required className="mt-2 block w-full rounded-2xl border border-[#d8d4c8] bg-[#faf9f5] px-4 py-3 text-base" /></label>
                     <label className="text-sm font-black">Start time<input type="time" value={startedAt} onChange={(event)=>setStartedAt(event.target.value)} required className="mt-2 block w-full rounded-2xl border border-[#d8d4c8] bg-[#faf9f5] px-4 py-3 text-base" /></label>
@@ -267,13 +267,13 @@ export default function CaretakerDailyCarePage() {
                   <label className="block rounded-2xl border border-dashed border-[#8bbca6] bg-[#edf8f1] p-4 text-sm font-black sm:p-5">📷 Add today&apos;s tree photo<input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment" onChange={(event) => setPhoto(event.target.files?.[0] || null)} required className="mt-3 block w-full text-sm text-[#617169] file:mr-3 file:min-h-12 file:rounded-xl file:border-0 file:bg-[#08745b] file:px-4 file:py-2 file:font-black file:text-white" />{photo && <span className="mt-3 block break-words text-xs text-[#08745b]">Selected: {photo.name} · {(photo.size / 1024 / 1024).toFixed(1)} MB</span>}</label>
                   <label className="block text-sm font-black">Notes <span className="font-normal text-[#718078]">(optional)</span><textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} maxLength={1500} placeholder="Add anything Admin should know." className="mt-2 block w-full rounded-2xl border border-[#d8d4c8] bg-[#faf9f5] px-4 py-3 text-base placeholder:text-[#9aa49f]" /></label>
                   <p className="text-xs leading-6 text-[#718078]">Internet is needed only when you submit. Original photo quality will be kept.</p>
-                  {alreadySubmitted && <p className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm font-bold text-amber-100">An update for this Tree ID and date is already pending or approved.</p>}
-                  <button disabled={submitting || alreadySubmitted} className="mobile-sticky-action w-full rounded-2xl bg-[#073d2e] px-6 py-4 font-black text-white shadow-lg disabled:opacity-40 sm:w-auto">{submitting ? "Sending report…" : "Send Daily Report"}</button>
+                  {alreadySubmitted && <p className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm font-bold text-amber-900">An update for this Tree ID and date is already pending or approved.</p>}
+                  <button disabled={submitting || alreadySubmitted} className="mobile-primary-action w-full rounded-2xl bg-[#073d2e] px-6 py-4 font-black text-white shadow-lg disabled:opacity-40 sm:w-auto">{submitting ? "Sending report…" : "Send Daily Report"}</button>
                 </form>
               </>}
             </section>
 
-            <section className="min-w-0 rounded-[1.5rem] border border-[#ded8ca] bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-6">
+            <section className="sur-panel min-w-0 rounded-[1.5rem] border border-[#ded8ca] bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-6">
               <h2 className="text-2xl font-black">Recent reports</h2>
               <div className="mt-5 space-y-3">{selectedUpdates.length === 0 ? <Empty text="No report submitted for this tree yet." /> : selectedUpdates.map((update) => <ReportCard key={String(update.id)} update={update} onCorrect={() => { setObservedOn(String(update.observed_on)); setHealth(String(update.health_status)); setNotes(String(update.notes)); window.scrollTo({ top: 0, behavior: "smooth" }); }} />)}</div>
             </section>

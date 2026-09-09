@@ -95,7 +95,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   ];
 
   return (
-    <div className="min-h-screen bg-[#f4f1e7]">
+    <div className={`${/\/admin\/(toh|guardian|recovery)(\/|$)/.test(pathname) ? "" : "sur-maximal-workspace"} min-h-screen bg-[#f4f1e7]`}>
       <header className="sticky top-0 z-50 border-b border-[#d9d4c5] bg-[#fbfaf5]/95 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
           <Link href="/admin/dashboard" className="flex min-w-0 items-center gap-3">

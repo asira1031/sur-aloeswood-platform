@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./maximal-theme.css";
 
 :root {
   --background: #ffffff;

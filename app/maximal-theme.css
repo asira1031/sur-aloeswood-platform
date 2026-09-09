@@ -1,0 +1,149 @@
+/* Visual-only skin. Semantic danger/warning/success colors and workflow logic stay intact. */
+.sur-design {
+  --sur-forest: #102e24;
+  --sur-gold: #d9b46e;
+  --sur-paper: #f4eddb;
+  min-height: 100vh;
+  color: #183c30;
+  background: #102e24 url('/app-assets/sur-botanical-maximal-v1.png') center top / cover fixed;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.sur-design :is(h1,h2,h3) { font-family: Georgia, 'Times New Roman', serif; font-weight: 400; letter-spacing: -.025em; }
+.sur-design h1 { line-height: 1.12; }
+.sur-design h2 { line-height: 1.2; }
+.sur-design :is(button,input,select,textarea) { font-family: Arial, Helvetica, sans-serif; }
+.sur-design :is(button,a,input,select,textarea,summary):focus-visible { outline: 3px solid #bc913f; outline-offset: 3px; }
+.sur-design :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),select,textarea) {
+  border: 1px solid #c6b68b; border-radius: 10px; background-color: #fffdf7; color: #183c30;
+  min-height: 44px; box-shadow: inset 0 1px 3px #183c3008;
+}
+.sur-design :is(input,textarea)::placeholder { color: #68786e; opacity: 1; }
+.sur-design input[type=file] { max-width: 100%; }
+.sur-design input[type=file]::file-selector-button { background: #183c30; color: #fff8e8; border: 1px solid #d9b46e; border-radius: 8px; min-height: 44px; padding: 8px 15px; margin-right: 12px; }
+.sur-design :is(button,a).bg-emerald-700,
+.sur-design :is(button,a).bg-green-600,
+.sur-design :is(button,a)[class~="bg-[#073d2e]"],
+.sur-design :is(button,a)[class~="bg-[#0b3d2e]"] {
+  background: #183c30; color: #fff8e8; border: 1px solid #bd9a51; border-radius: 10px;
+  box-shadow: 0 3px 0 #071e16; min-height: 44px;
+}
+.sur-design :is(button,a):disabled { box-shadow: none; cursor: not-allowed; }
+.sur-design :is(section,article,aside).bg-white,
+.sur-design :is(section,article,aside)[class~="bg-[#f4f1e7]"] {
+  background-color: #fffaf0; border-color: #cdb57b;
+}
+.sur-design [role=dialog] > section,
+.sur-design aside[role=dialog] { border: 4px double #bfa160; background-color: #fffaf0; }
+.sur-design table { border-collapse: separate; border-spacing: 0; font-size: 14px; }
+.sur-design th { background: #ece2c9; color: #183c30; border-bottom: 1px solid #bfa160; padding-block: 14px; }
+.sur-design td { border-bottom-color: #ded2b5; padding-block: 14px; }
+.sur-design tbody tr:hover { background-color: #f5ecd9; }
+.sur-design .sur-page { background: transparent !important; }
+.sur-design .sur-page-content { background: #f4eddb; border: 1px solid #bfa160; padding: clamp(16px,2.5vw,32px); border-radius: 4px; }
+.sur-design .sur-page-hero { background: #102e24 url('/app-assets/sur-botanical-maximal-v1.png') right center / cover; border: 4px double #d9b46e; border-radius: 4px; color: #fff8e8; padding: clamp(22px,3vw,38px); }
+.sur-design .sur-page-hero h1 { font-size: clamp(32px,4vw,52px); }
+.sur-design .sur-panel { border: 1px solid #cdb57b; border-radius: 12px; background: #fffaf0; box-shadow: 0 5px 18px #183c3009; }
+.sur-design .sur-drawer { border-left: 5px double #bfa160; }
+.sur-design .sur-drawer h2 { font-size: 32px; }
+.sur-design .sur-drawer-heading { padding-bottom: 18px; border-bottom: 1px solid #cdb57b; }
+.sur-design .sur-recommended { border-left: 5px solid #b58a37; border-radius: 4px; background: #f8edcf; }
+.sur-design .sur-toolbar { padding: 12px; background: #fffaf0; border: 1px solid #cdb57b; border-radius: 10px; }
+.sur-design .sur-checkout > section { border-radius: 18px; }
+.sur-design .sur-checkout-header { background: #102e24 url('/app-assets/sur-botanical-maximal-v1.png') center / cover; color: #fff8e8; border-bottom: 3px double #d9b46e; }
+.sur-design .sur-checkout-header p { color: #e7c884; }
+.sur-design .sur-checkout-header button { color: #183c30; }
+.sur-design .sur-product-image { max-height: 290px; object-fit: contain; }
+.sur-design .sur-care-options button { min-width: 0; border-radius: 12px; }
+.sur-design .sur-care-options button > div { flex-wrap: wrap; }
+.sur-design .sur-care-options button b { white-space: normal; }
+.sur-design .sur-care-options button[aria-pressed=true] { border-color: #a0782e; background: #f7edcf; box-shadow: inset 4px 0 #b58a37; }
+.sur-design .sur-page-hero,
+.sur-design .sur-checkout-header {
+  background-image: linear-gradient(90deg,#102e24eb,#102e24c9 55%,#102e2466),url('/app-assets/sur-botanical-maximal-v1.png');
+}
+.sur-design .sur-page-hero p { color: #e8e0cd; }
+.sur-design .sur-task-card { border: 1px solid #bc9b57; border-radius: 12px; background: #fffaf0; }
+.sur-design .sur-task-card > div:first-child { background: #183c30; border-bottom: 3px double #d9b46e; }
+.sur-design main:not(.text-white):not(.sur-page) { background-color: #f4eddb !important; background-image: none !important; }
+.sur-design main.text-white { background-color: #102e24; }
+.sur-design main.text-white > .absolute.inset-0.bg-cover { background-image: url('/app-assets/sur-botanical-maximal-v1.png') !important; }
+.sur-design main > header { border-bottom: 3px double #b99a59; }
+.sur-design .sur-tree-page > div > section:first-child { border-radius: 8px; }
+.sur-design :is(button,a).bg-white { border-color: #c6b68b; }
+.sur-design :is(button,a):not(:disabled):hover { filter: brightness(.98); }
+.sur-design > main.text-white {
+  background-image: linear-gradient(90deg,#102e24b8,#102e24c9),url('/app-assets/sur-botanical-maximal-v1.png');
+  background-size: cover; background-position: center;
+}
+.sur-design :is(button,a).bg-emerald-600,
+.sur-design :is(button,a).bg-emerald-500,
+.sur-design :is(button,a).bg-green-500 { background: #d9b46e; color: #183c30; border: 1px solid #b99a59; }
+.sur-design [aria-pressed=true]:not(.sur-care-options button) { border-color: #a0782e; background-color: #f7edcf; color: #183c30; box-shadow: inset 0 -3px #b58a37; }
+@media(min-width:1024px){ .sur-design .sur-page { padding-inline: 5vw; } }
+@media(max-width:640px){
+ .sur-design { background-attachment: scroll; }
+ .sur-design .sur-page-content { padding: 14px; }
+ .sur-design .sur-checkout > section { border-radius: 18px 18px 0 0; max-height: 94dvh; padding-bottom: env(safe-area-inset-bottom); }
+ .sur-design .sur-product-image { max-height: 220px; }
+ .sur-design [role=dialog] { max-width: 100vw; }
+}
+@media(prefers-reduced-motion:reduce){ .sur-design * { scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important; } }
+@media print { .sur-design { background: white; } }
+.sur-maximal-auth :is(h1,h2,h3) { font-family: Georgia, 'Times New Roman', serif; font-weight: 400; }
+.sur-maximal-auth :is(h1,h2,h3) .text-green-300 { color: #e3c58e; }
+.sur-maximal-auth a.bg-green-600 { background: #d9b46e; color: #102e24; }
+.sur-maximal-auth div.bg-white\/95 { background: #fffdf6; border: 4px double #d9b46e; }
+.sur-maximal-auth form { border-top: 3px double #b79750; padding-top: 24px; }
+.sur-maximal-auth button[type="submit"]:not(:disabled) { background: #164735; box-shadow: 0 0 0 1px #d9b46e; }
+.sur-maximal-auth input:focus-visible { outline: 2px solid #b79750; outline-offset: 2px; }
+.sur-maximal-workspace {
+  --sur-forest: #102e24;
+  --sur-gold: #d9b46e;
+  --sur-paper: #f4eddb;
+  min-height: 100vh;
+  background: #102e24 url('/app-assets/sur-botanical-maximal-v1.png') center top / cover fixed;
+}
+.sur-maximal-workspace.sur-customer-app::before {
+  background-image: url('/app-assets/sur-botanical-maximal-v1.png');
+  background-position: center;
+}
+.sur-maximal-workspace > main {
+  background-image: none !important;
+  background-color: #f4eddbf2 !important;
+  border-inline: 1px solid #d9b46e66;
+}
+.sur-maximal-workspace main > div > header.text-white,
+.sur-maximal-workspace main > div > section:first-child[class*="text-white"] {
+  background: #102e24 url('/app-assets/sur-botanical-maximal-v1.png') center / cover;
+  border: 4px double #d9b46e;
+}
+.sur-maximal-workspace > header {
+  background: #f4eddb;
+  border-bottom: 4px double #a78548;
+}
+.sur-maximal-workspace h1 {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-weight: 400;
+  letter-spacing: -.025em;
+}
+.sur-maximal-workspace :is(section, article, div).bg-white {
+  background-color: #fffdf6;
+  border-color: #d2bc88;
+}
+.sur-maximal-workspace :is(section, article).shadow-xl {
+  box-shadow: 0 18px 45px #021a1460, 0 0 0 1px #d9b46e66;
+}
+.sur-maximal-workspace :is(input, select, textarea) {
+  border-color: #b8ac8d;
+}
+.sur-maximal-workspace :is(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid #b78727;
+  outline-offset: 3px;
+}
+.sur-maximal-workspace :is(input,select,textarea):disabled { opacity: .65; }
+@media(max-width:640px) {
+  .sur-maximal-workspace { background-attachment: scroll; }
+}
+@media print {
+  .sur-maximal-workspace { background: white; }
+}

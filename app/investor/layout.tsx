@@ -77,5 +77,5 @@ export default function InvestorLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  return <div className="sur-customer-app"><AccountModeSwitcher mode="CUSTOMER" />{children}</div>;
+  return <div className="sur-customer-app sur-maximal-workspace"><AccountModeSwitcher mode="CUSTOMER" />{children}</div>;
 }

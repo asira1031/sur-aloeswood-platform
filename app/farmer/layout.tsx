@@ -102,5 +102,5 @@ export default function FarmerLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  return <><AccountModeSwitcher mode="CARETAKER" />{children}</>;
+  return <div className="sur-maximal-workspace"><AccountModeSwitcher mode="CARETAKER" />{children}</div>;
 }

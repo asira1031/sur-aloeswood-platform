@@ -221,10 +221,10 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-green-950 text-white">
+    <main className="sur-maximal-auth relative min-h-screen overflow-hidden bg-green-950 text-white">
       <div
         className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: "url('/sur-bg-auth-v2.png')" }}
+        style={{ backgroundImage: "url('/app-assets/sur-botanical-maximal-v1.png')" }}
       />
       <div className="absolute inset-0 bg-gradient-to-r from-green-950/85 via-green-950/55 to-blue-950/45" />
 
